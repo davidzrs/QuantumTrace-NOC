@@ -16,6 +16,7 @@ from quantumtrace.core.models import (
     SourceType,
     TierCounts,
 )
+from quantumtrace.core.roles import Role, role_of
 
 TIER_WEIGHT: dict[RiskTier, float] = {
     RiskTier.CRITICAL: 10.0,
@@ -31,11 +32,8 @@ EXPOSURE_MULTIPLIER: dict[Exposure, float] = {
 }
 # Harvest-Now-Decrypt-Later hits confidentiality: a key exchange or ciphertext recorded today is
 # decrypted once a quantum computer exists. Forging a signature needs that computer at the time
-# of the attack, so Shor-exposed authentication weighs less. Unlisted usages keep full weight.
-AUTHENTICATION_USAGES = {
-    "signature", "sign_verify", "certificate-key", "certificate-signature",
-    "tls-authentication", "ssh-host-key",
-}  # fmt: skip
+# of the attack, so Shor-exposed authentication (Role.AUTHENTICATION in core/roles.py) weighs
+# less. Every other role keeps full weight.
 AUTHENTICATION_MULTIPLIER = 0.7
 MAX_PER_FINDING = BROKEN_WEIGHT * EXPOSURE_MULTIPLIER[Exposure.INTERNET]
 
@@ -46,7 +44,7 @@ def finding_weight(finding: Finding) -> float:
     c, a = finding.classification, finding.asset
     if c.classically_broken:
         base = BROKEN_WEIGHT
-    elif c.threat is QuantumThreat.SHOR and (a.usage or "").lower() in AUTHENTICATION_USAGES:
+    elif c.threat is QuantumThreat.SHOR and role_of(a.usage) is Role.AUTHENTICATION:
         base = TIER_WEIGHT[c.tier] * AUTHENTICATION_MULTIPLIER
     else:
         base = TIER_WEIGHT[c.tier]

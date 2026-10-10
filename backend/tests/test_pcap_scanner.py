@@ -79,6 +79,18 @@ def test_ssh_legacy_vs_modern(result: ScanResult) -> None:
         ("ChaCha20-Poly1305", "negotiated"): 10,
         ("3DES", "permitted"): 14,
     }
+    group1 = [f for f in by_usage(result, "ssh-key-exchange")
+              if f.asset.observed == "diffie-hellman-group1-sha1"]  # fmt: skip
+    assert len(group1) == 14
+    assert all(f.asset.key_size == 1024 for f in group1)
+    assert {(f.classification.rule_id, f.classification.classically_broken) for f in group1} == {
+        ("dh-1024", True)
+    }
+    group14 = [f for f in by_usage(result, "ssh-key-exchange")
+               if f.asset.observed == "diffie-hellman-group14-sha1"]  # fmt: skip
+    assert {(f.classification.rule_id, f.classification.classically_broken) for f in group14} == {
+        ("dh", False)
+    }
     permitted = [f for f in result.findings if f.asset.observation is Observation.PERMITTED]
     assert all("server-permitted" in f.asset.flags for f in permitted)
     assert len(by_usage(result, "ssh-mac")) == 14  # chacha20-poly1305 is AEAD: no MAC finding

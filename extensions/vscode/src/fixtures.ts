@@ -44,6 +44,7 @@ export function finding(overrides: Overrides = {}): Finding {
       threat: "shor",
       tier: "critical",
       classically_broken: true,
+      hndl: false,
       nist_reference: "NIST SP 800-131A (disallowed), NIST IR 8547",
       replacement: "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)",
       oid: "1.2.840.113549.1.1.1",

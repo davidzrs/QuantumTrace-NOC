@@ -37,6 +37,7 @@ const f = (tier: RiskTier, where: Evidence, ...more: Evidence[]): Finding => ({
     threat: "shor",
     tier,
     classically_broken: false,
+    hndl: false,
     nist_reference: null,
     replacement: null,
     oid: null,

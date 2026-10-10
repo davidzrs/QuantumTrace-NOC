@@ -104,4 +104,4 @@ def scan(src: SourceFile) -> None:
 
     if re.search(r"^import java\.util\.Random;", text, re.M) or "java.util.Random" in text:
         for m in re.finditer(r"\bnew Random\s*\(", text):
-            src.emit(m.start(), "java.util.Random", "non-csprng", "rng")
+            src.emit_weak_rng(m.start(), "java.util.Random")

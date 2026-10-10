@@ -48,8 +48,9 @@ export function groupKey(f: Finding): string {
 const sessions = (f: Finding) => 1 + f.asset.more_evidence.length;
 
 /**
- * Rows for the fix list, most urgent first: by when to fix, then already broken, then
- * internet-facing (recorded today, decrypted later), then how many places.
+ * Rows for the fix list, most urgent first: by when to fix, then already broken, then exposed to
+ * harvest-now, decrypt-later (a key exchange or encryption recorded today is read later), then
+ * internet-facing, then how many places.
  */
 export function fixRows(findings: Finding[], grouped = true): FixRow[] {
   const byKey = new Map<string, FixRow>();
@@ -68,6 +69,7 @@ export function fixRows(findings: Finding[], grouped = true): FixRow[] {
     (a, b) =>
       FIX_BY[a.fixBy].rank - FIX_BY[b.fixBy].rank ||
       Number(b.lead.classification.classically_broken) - Number(a.lead.classification.classically_broken) ||
+      Number(b.lead.classification.hndl) - Number(a.lead.classification.hndl) ||
       Number(b.lead.asset.exposure === "internet") - Number(a.lead.asset.exposure === "internet") ||
       b.members.length - a.members.length ||
       tierRank(a) - tierRank(b) ||

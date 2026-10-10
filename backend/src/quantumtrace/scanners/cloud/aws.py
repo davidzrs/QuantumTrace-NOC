@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import resources
@@ -31,6 +31,8 @@ from quantumtrace.rules.tls import CLASSICAL_TLS13_GROUPS, decompose
 
 KIND_KEYS = {"Keys": "kms", "Certificates": "acm", "LoadBalancers": "elb"}
 PLAINTEXT_PROTOCOLS = {"HTTP", "TCP", "UDP", "TCP_UDP"}
+# Certificate key type -> the TLS 1.2 suite authentication it can perform
+SUITE_AUTH = {"RSA": "RSA", "EC": "ECDSA"}
 
 
 @lru_cache(maxsize=1)
@@ -86,14 +88,16 @@ class AwsCloudPostureScanner:
                     listener_exposure[li.get("ListenerArn", "")] = exposure
 
         known_certs: set[str] = set()
+        cert_keys: dict[str, str] = {}  # certificate ARN -> key type (RSA / EC)
         for path, data in docs["kms"]:
             yield from self._kms(path, data)
         for path, data in docs["acm"]:
             known_certs.update(c.get("CertificateArn", "") for c in data["Certificates"])
+            cert_keys.update(_certificate_keys(data))
             yield from self._acm(path, data, listener_exposure)
         referenced: set[str] = set()
         for path, data in docs["elb"]:
-            yield from self._elb(path, data, referenced)
+            yield from self._elb(path, data, referenced, cert_keys)
 
         if missing := sorted(referenced - known_certs):
             yield ScanNote(
@@ -219,14 +223,16 @@ class AwsCloudPostureScanner:
                     )
 
     # ------------------------------------------------------------------ ELB
-    def _elb(self, path: Path, data: dict[str, Any], referenced: set[str]) -> Iterable[CryptoAsset]:
+    def _elb(
+        self, path: Path, data: dict[str, Any], referenced: set[str], cert_keys: dict[str, str]
+    ) -> Iterable[CryptoAsset]:
         for i, lb in enumerate(data["LoadBalancers"]):
             exposure = _scheme_exposure(lb.get("Scheme"))
             for j, li in enumerate(lb.get("Listeners", [])):
                 protocol = li.get("Protocol", "")
-                referenced.update(
-                    c["CertificateArn"] for c in li.get("Certificates", []) if "CertificateArn" in c
-                )
+                certs = [c["CertificateArn"] for c in li.get("Certificates", [])
+                         if "CertificateArn" in c]  # fmt: skip
+                referenced.update(certs)
                 listener_path = f"$.LoadBalancers[{i}].Listeners[{j}]"
                 evidence = Evidence(
                     source_type=SourceType.CLOUD,
@@ -253,13 +259,25 @@ class AwsCloudPostureScanner:
                         )
                     continue
                 ctx = {**evidence.context, "json_path": f"{listener_path}.SslPolicy"}
+                # several certificates (SNI) widen the choice; one missing from the export
+                # leaves the listener's key types unknown, so every suite stays
+                key_types = None
+                if certs and all(arn in cert_keys for arn in certs):
+                    key_types = sorted({cert_keys[arn] for arn in certs})
+                    ctx["certificate_key"] = ", ".join(key_types)
                 yield from _tls_policy_assets(
-                    li.get("SslPolicy", ""), exposure, evidence.model_copy(update={"context": ctx})
+                    li.get("SslPolicy", ""),
+                    exposure,
+                    evidence.model_copy(update={"context": ctx}),
+                    key_types,
                 )
 
 
 def _tls_policy_assets(
-    policy_name: str, exposure: Exposure, evidence: Evidence
+    policy_name: str,
+    exposure: Exposure,
+    evidence: Evidence,
+    cert_keys: Collection[str] | None = None,
 ) -> Iterable[CryptoAsset]:
     policy = elb_policies().get(policy_name)
     if policy is None:
@@ -302,9 +320,14 @@ def _tls_policy_assets(
         if mac:
             agg.macs.add(mac)
 
+    signable = None if cert_keys is None else {SUITE_AUTH[k] for k in cert_keys}
     has_tls13 = False
     for suite in policy["ciphers"]:
         parts = decompose(suite)
+        # A TLS 1.2 suite authenticates with the listener's certificate: ECDHE-ECDSA needs an
+        # EC key, ECDHE-RSA and static RSA an RSA key. TLS 1.3 suites work with either.
+        if signable is not None and parts.authentication not in (None, *signable):
+            continue
         if parts.key_exchange is None:
             has_tls13 = True
         else:
@@ -345,6 +368,17 @@ def _tls_policy_assets(
             flags=sorted(agg.flags),
             evidence=evidence.model_copy(update={"context": ctx}),
         )
+
+
+def _certificate_keys(data: dict[str, Any]) -> dict[str, str]:
+    """ARN -> key type (RSA / EC) of each certificate whose KeyAlgorithm is readable."""
+    keys: dict[str, str] = {}
+    for cert in data["Certificates"]:
+        key_alg = cert.get("KeyAlgorithm", "").upper()
+        kind = "RSA" if key_alg.startswith("RSA_") else "EC" if key_alg.startswith("EC") else None
+        if kind and cert.get("CertificateArn"):
+            keys[cert["CertificateArn"]] = kind
+    return keys
 
 
 def _scheme_exposure(scheme: str | None) -> Exposure:

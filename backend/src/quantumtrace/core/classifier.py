@@ -19,6 +19,7 @@ from quantumtrace.core.models import (
     QuantumThreat,
     RiskTier,
 )
+from quantumtrace.core.roles import exposed_to_hndl
 
 
 class Rule(Model):
@@ -90,6 +91,9 @@ class Classifier:
         if misused := [self.misuse[f] for f in asset.flags if f in self.misuse]:
             classification.classically_broken = True
             classification.rationale = " ".join([classification.rationale, *misused])
+        classification.hndl = exposed_to_hndl(
+            classification.threat, classification.tier, asset.usage
+        )
         return Finding(asset=asset, classification=classification)
 
 

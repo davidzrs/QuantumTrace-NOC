@@ -48,6 +48,8 @@ function ReportBody({ result }: { result: ScanResult }) {
   const internetCritical = findings.filter(
     (f) => f.classification.tier === "critical" && f.asset.exposure === "internet",
   ).length;
+  const hndl = findings.filter((f) => f.classification.hndl).length;
+  const internetHndl = findings.filter((f) => f.classification.hndl && f.asset.exposure === "internet").length;
   const notes = result.limitations.filter((n) => !source || (noteSource(n.scanner) ?? source) === source);
   const noCapture = bySource("network") === 0;
 
@@ -147,7 +149,7 @@ function ReportBody({ result }: { result: ScanResult }) {
                   )}
                 </h1>
                 <p className="qt-fade max-w-[72ch] text-base leading-[1.5] text-pretty text-ink-muted">
-                  {heroSub({ c, m, u, s, internetCritical })}
+                  {heroSub({ c, m, u, s, internetCritical, hndl, internetHndl })}
                 </p>
               </>
             )}
@@ -200,7 +202,9 @@ function ReportBody({ result }: { result: ScanResult }) {
   );
 }
 
-function heroSub({ c, m, u, s, internetCritical }: Record<"c" | "m" | "u" | "s" | "internetCritical", number>): string {
+function heroSub({
+  c, m, u, s, internetCritical, hndl, internetHndl,
+}: Record<"c" | "m" | "u" | "s" | "internetCritical" | "hndl" | "internetHndl", number>): string {
   const rest = [
     m ? `${m} ${c ? "more " : ""}${m === 1 ? "is" : "are"} medium, weakened by Grover’s` : "",
     u ? `${u} ${u === 1 ? "is" : "are"} unclassified` : "",
@@ -208,12 +212,19 @@ function heroSub({ c, m, u, s, internetCritical }: Record<"c" | "m" | "u" | "s" 
   ].filter(Boolean);
   const list = rest.length > 1 ? `${rest.slice(0, -1).join(", ")} and ${rest.at(-1)}` : (rest[0] ?? "");
   const lead = c ? "Shor’s algorithm breaks them outright." : "";
+  const harvest = hndl
+    ? `${hndl} of them ${hndl === 1 ? "is a key exchange or encryption" : "are key exchanges or encryption"}, exposed to harvest-now, decrypt-later.`
+    : "";
+  // only key exchanges and encryption are harvested; a signature has to be forged live
+  const harvested = internetHndl
+    ? `, ${internetHndl} of them key exchanges or encryption whose traffic can be recorded today and decrypted later`
+    : "";
   const exposure = c
     ? internetCritical
-      ? `${internetCritical} of the critical ones sit on internet-facing endpoints, where traffic can be recorded today and decrypted later.`
+      ? `${internetCritical} of the critical ones sit on internet-facing endpoints${harvested}.`
       : "None of them faces the internet directly."
     : "";
-  return [lead, list && `${list.charAt(0).toUpperCase()}${list.slice(1)}.`, exposure].filter(Boolean).join(" ");
+  return [lead, harvest, list && `${list.charAt(0).toUpperCase()}${list.slice(1)}.`, exposure].filter(Boolean).join(" ");
 }
 
 function ScorePanel({ score, scope }: { score: RiskScore; scope: string }) {

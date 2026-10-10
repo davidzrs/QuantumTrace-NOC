@@ -131,6 +131,14 @@ class Classification(Model):
     threat: QuantumThreat
     tier: RiskTier
     classically_broken: bool = False
+    hndl: bool = Field(
+        default=False,
+        description=(
+            "Harvest-now, decrypt-later: Shor breaks it and it protects confidentiality (key "
+            "exchange, key transport, public-key encryption), so data recorded today can be "
+            "decrypted later. Signatures, certificates and digests are never exposed this way."
+        ),
+    )
     nist_reference: str | None = None
     replacement: str | None = None
     oid: str | None = None

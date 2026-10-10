@@ -9,6 +9,7 @@ import pytest
 from quantumtrace.core.classifier import load_misuse
 from quantumtrace.core.engine import run_scan
 from quantumtrace.core.models import Confidence, Finding, Observation, ScanResult
+from quantumtrace.scanners.code.common import is_secret_name
 from tests.conftest import summarise
 
 REPOS = "sample-repos"
@@ -251,3 +252,82 @@ def test_masking_keeps_real_calls_and_their_lines(tmp_path: Path) -> None:
     result = scan_source(tmp_path, "keep.py", code)
     found = sorted((f.classification.name, f.asset.evidence.line) for f in result.findings)
     assert found == [("MD5", 5), ("SHA-256", 9), ("SHA-384", 11)]
+
+
+# --- Weak RNG: always reported, confident only next to a secret ----------------------------
+@pytest.mark.parametrize(
+    "file", ["python/report_export.py", "java/BatchExporter.java", "go/batch-pipeline/main.go"]
+)
+def test_weak_rng_making_a_session_token_is_high_confidence(result: ScanResult, file: str) -> None:
+    [rng] = [f for f in in_file(result, file) if f.asset.usage == "rng"]
+    assert rng.asset.confidence is Confidence.HIGH
+    assert "secret-context" in rng.asset.flags
+    assert is_secret_name(rng.asset.evidence.context["secret_hint"])
+
+
+@pytest.mark.parametrize(
+    ("name", "secret"),
+    [
+        ("session_token", True), ("apiKey", True), ("nonceBytes", True), ("getIV", True),
+        ("AUTH_HEADER", True), ("api_keys", True), ("issueOTP", True),
+        ("private", False), ("monkey", False), ("keyboard", False), ("author", False),
+        ("cores", False),
+    ],
+)  # fmt: skip
+def test_secret_names_match_whole_words(name: str, secret: bool) -> None:
+    assert is_secret_name(name) is secret
+
+
+@pytest.mark.parametrize(
+    ("name", "code", "hint"),
+    [
+        # no clue anywhere: still a finding, but low confidence
+        ("colour.py", "import random\ncores = ['red', 'blue']\ncor = random.choice(cores)\n", None),
+        # whole words only: `monkey` has no `key`, `private` has no `iv`
+        ("monkey.py", "import random\n\ndef monkey_patch():\n    return random.random()\n", None),
+        ("Private.java", "import java.util.Random;\nclass C {\n"
+         "  private int x = new Random().nextInt();\n}\n", None),
+        # a function defined above doesn't enclose a module-level call
+        ("module.py", "import random\n\ndef make_nonce():\n    pass\n\n"
+         "cor = random.choice([1, 2])\n", None),
+        ("pick.go", 'package main\nimport "math/rand"\nfunc pickColour() int {\n'
+         "\treturn rand.Intn(3)\n}\n", None),
+        # (a) the call's line
+        ("line.py", "import random\napi_key = random.getrandbits(128)\n", "api_key"),
+        # (b) the variable the statement assigns, when the call sits on a later line
+        ("target.py", "import random\nreset_token = ''.join(\n"
+         "    random.choice('abc') for _ in range(32)\n)\n", "reset_token"),
+        # (c) the enclosing function or method, through nested blocks
+        ("func.py", "import random\n\ndef make_nonce():\n    x = 1\n    return random.random()\n",
+         "make_nonce"),
+        ("Salt.java", "import java.util.Random;\nclass C {\n  byte[] newSalt() {\n"
+         "    if (true) {\n      return new byte[] { (byte) new Random().nextInt() };\n    }\n"
+         "    return null;\n  }\n}\n", "newSalt"),
+        ("otp.go", 'package main\nimport "math/rand"\nfunc (s *Server) issueOTP() int {\n'
+         "\tif true {\n\t\treturn rand.Intn(999999)\n\t}\n\treturn 0\n}\n", "issueOTP"),
+    ],
+)  # fmt: skip
+def test_weak_rng_confidence_follows_secret_clues(
+    tmp_path: Path, name: str, code: str, hint: str | None
+) -> None:
+    [rng] = scan_source(tmp_path, name, code).findings
+    assert rng.asset.usage == "rng"
+    assert rng.asset.confidence is (Confidence.HIGH if hint else Confidence.LOW)
+    assert ("secret-context" in rng.asset.flags) is (hint is not None)
+    assert rng.asset.evidence.context.get("secret_hint") == hint
+
+
+def test_weak_rng_repeats_keep_the_strongest_clue(tmp_path: Path) -> None:
+    code = (
+        "import random\n"
+        "cor = random.choice([1, 2])\n"
+        "\n"
+        "def session_id():\n"
+        "    return random.getrandbits(64)\n"
+    )
+    [rng] = scan_source(tmp_path, "mixed.py", code).findings
+    assert rng.asset.confidence is Confidence.HIGH
+    assert "secret-context" in rng.asset.flags
+    assert [e.line for e in rng.asset.all_evidence] == [2, 5]
+    assert "secret_hint" not in rng.asset.evidence.context
+    assert rng.asset.more_evidence[0].context["secret_hint"] == "session_id"

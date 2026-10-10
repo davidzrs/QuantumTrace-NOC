@@ -237,6 +237,7 @@ function Row({ row, expanded, onToggle }: { row: FixRow; expanded: boolean; onTo
           <span className="font-semibold">{algorithmLabel(f)}</span>
           {family && <span className="font-mono text-xs text-ink-muted">{family}</span>}
           {flags.length > 0 && <span className="font-mono text-[11px] text-medium">{flags.join(" · ")}</span>}
+          {f.classification.hndl && <span className="text-xs text-ink-muted">Exposed to harvest-now, decrypt-later</span>}
           {f.asset.confidence !== "high" && (
             <span className="text-xs text-ink-faint" title={confidenceLabel(f.asset.confidence)}>
               {f.asset.confidence === "medium" ? "inferred" : "uncertain"}
@@ -427,6 +428,8 @@ function exposureNote(f: Finding): string {
   if (f.asset.exposure === "unknown" && f.asset.evidence.source_type === "network") {
     return "The capture doesn’t show whether this server faces the internet.";
   }
+  // a signature or a symmetric cipher can't be harvested now and read later, only reached
+  if (f.asset.exposure === "internet" && !f.classification.hndl) return "Reachable from the internet.";
   return EXPOSURE_NOTE[f.asset.exposure] ?? "";
 }
 
