@@ -36,7 +36,10 @@ def test_findings_carry_line_numbers_and_snippets(result: ScanResult) -> None:
     assert result.findings
     for f in result.findings:
         assert f.asset.evidence.line, f
-        assert f.asset.evidence.snippet
+        ev = f.asset.evidence
+        assert ev.snippet and ev.snippet_start_line and ev.line
+        hit = ev.snippet.split("\n")[ev.line - ev.snippet_start_line]
+        assert hit.strip() in Path(ev.location).read_text().split("\n")[ev.line - 1]
         assert f.asset.observation is Observation.IN_CODE
 
 

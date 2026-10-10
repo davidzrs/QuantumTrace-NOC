@@ -16,7 +16,7 @@ function finding(id: string, tier: RiskTier): Finding {
       confidence: "high",
       exposure: "internet",
       flags: [],
-      evidence: { source_type: "cloud", location: "arn:x", line: null, snippet: null, context: {} },
+      evidence: { source_type: "cloud", location: "arn:x", line: null, snippet: null, snippet_start_line: null, context: {} },
       more_evidence: [],
     },
     classification: {

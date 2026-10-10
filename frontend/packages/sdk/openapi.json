@@ -690,7 +690,20 @@
                 "type": "null"
               }
             ],
-            "title": "Snippet"
+            "title": "Snippet",
+            "description": "Source lines around `line` (code evidence), dedented"
+          },
+          "snippet_start_line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet Start Line",
+            "description": "Line number of the snippet's first line"
           },
           "context": {
             "additionalProperties": {
@@ -706,6 +719,7 @@
           "location",
           "line",
           "snippet",
+          "snippet_start_line",
           "context"
         ],
         "title": "Evidence",

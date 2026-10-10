@@ -227,8 +227,16 @@ export interface components {
             location: string;
             /** Line */
             line: number | null;
-            /** Snippet */
+            /**
+             * Snippet
+             * @description Source lines around `line` (code evidence), dedented
+             */
             snippet: string | null;
+            /**
+             * Snippet Start Line
+             * @description Line number of the snippet's first line
+             */
+            snippet_start_line: number | null;
             /** Context */
             context: {
                 [key: string]: string;

@@ -85,7 +85,12 @@ class Evidence(Model):
     source_type: SourceType
     location: str = Field(description="File path, cloud ARN or network flow (src:port -> dst:port)")
     line: int | None = None
-    snippet: str | None = None
+    snippet: str | None = Field(
+        default=None, description="Source lines around `line` (code evidence), dedented"
+    )
+    snippet_start_line: int | None = Field(
+        default=None, description="Line number of the snippet's first line"
+    )
     context: dict[str, str] = Field(default_factory=dict)
 
 

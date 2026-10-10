@@ -15,7 +15,7 @@ const f = (rule: string, tier: RiskTier, exposure: Finding["asset"]["exposure"],
     confidence: "high",
     exposure,
     flags: [],
-    evidence: { source_type: "cloud", location: "x", line: null, snippet: null, context: {} },
+    evidence: { source_type: "cloud", location: "x", line: null, snippet: null, snippet_start_line: null, context: {} },
     more_evidence: [],
   },
   classification: {

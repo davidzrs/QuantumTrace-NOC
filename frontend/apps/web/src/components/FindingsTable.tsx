@@ -280,7 +280,12 @@ const PLACES_SHOWN = 40;
 function FindingDetail({ finding: f, members }: { finding: Finding; members: Finding[] }) {
   const c = f.classification;
   const single = members.length === 1;
-  const context = Object.entries(f.asset.evidence.context ?? {}).filter(([, v]) => v);
+  // Code places carry their own snippet and caption, so they replace the plain location list.
+  const allCode = members.every((m) => m.asset.evidence.snippet);
+  // The snippet caption already lists repeat lines.
+  const context = Object.entries(f.asset.evidence.context ?? {}).filter(
+    ([k, v]) => v && !(k === "also_lines" && f.asset.evidence.snippet),
+  );
   return (
     <div className="grid gap-6 pl-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:pl-36">
       <div className="grid content-start gap-3">
@@ -344,7 +349,9 @@ function FindingDetail({ finding: f, members }: { finding: Finding; members: Fin
           </>
         )}
       </dl>
-      {!single && (
+      {single && f.asset.evidence.snippet && <CodeSnippet finding={f} />}
+      {!single && allCode && <SnippetList members={members} />}
+      {!single && !allCode && (
         <div className="grid gap-2 sm:col-span-2">
           <h3 className="text-sm font-semibold">Seen in {members.length} places</h3>
           <EvidenceList
@@ -356,6 +363,67 @@ function FindingDetail({ finding: f, members }: { finding: Finding; members: Fin
         </div>
       )}
     </div>
+  );
+}
+
+const SNIPPETS_SHOWN = 3;
+
+function SnippetList({ members }: { members: Finding[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? members : members.slice(0, SNIPPETS_SHOWN);
+  return (
+    <div className="grid gap-4 sm:col-span-2">
+      <h3 className="text-sm font-semibold">Seen in {members.length} places</h3>
+      {shown.map((m) => (
+        <CodeSnippet key={m.id} finding={m} />
+      ))}
+      {members.length > shown.length && (
+        <button type="button" onClick={() => setAll(true)} className="justify-self-start text-sm font-semibold underline underline-offset-4">
+          Show all {members.length} places
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The flagged source line with its neighbours, line-numbered, the hit marked in the tier colour. */
+function CodeSnippet({ finding: f }: { finding: Finding }) {
+  const e = f.asset.evidence;
+  if (!e.snippet) return null;
+  const meta = TIER_META[f.classification.tier];
+  const first = e.snippet_start_line ?? e.line ?? 1;
+  const lines = e.snippet.split("\n");
+  const also = e.context?.also_lines?.split(",").filter(Boolean) ?? [];
+  return (
+    <figure className="grid min-w-0 gap-1.5 sm:col-span-2">
+      <figcaption className="text-sm text-ink-muted">
+        <span className="font-mono break-all">{evidenceLabel(e)}</span>
+        {also.length > 0 && (
+          <> · also on line{also.length > 1 ? "s" : ""} <span className="tabular-nums">{also.join(", ")}</span></>
+        )}
+      </figcaption>
+      <pre className="overflow-x-auto border border-rule bg-ground py-2 font-mono text-xs leading-relaxed [tab-size:4]">
+        <code className="grid min-w-max">
+          {lines.map((text, i) => {
+            const n = first + i;
+            const hit = n === e.line;
+            return (
+              <span
+                key={n}
+                className="grid grid-cols-[3.5rem_minmax(0,1fr)]"
+                style={hit ? { background: meta.wash, boxShadow: `inset 3px 0 ${meta.color}` } : undefined}
+              >
+                <span className="pr-4 text-right text-ink-faint tabular-nums select-none" aria-hidden>{n}</span>
+                <span className={`pr-4 whitespace-pre ${hit ? "font-semibold" : ""}`}>
+                  {hit && <span className="sr-only">Flagged line {n}: </span>}
+                  {text || " "}
+                </span>
+              </span>
+            );
+          })}
+        </code>
+      </pre>
+    </figure>
   );
 }
 

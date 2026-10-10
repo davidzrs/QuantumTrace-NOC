@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,6 +18,8 @@ _KEY_CONST = re.compile(
 _KEY_LITERAL = re.compile(
     r"(?i)\b(\w*key\w*)\s*(?::=|=)\s*(?:b|\[\]byte\()?([\"'])([^\"'\n]{1,64})\2"
 )
+SNIPPET_CONTEXT = 2  # lines shown above and below the hit
+SNIPPET_WIDTH = 200
 
 
 @dataclass
@@ -56,7 +59,7 @@ class SourceFile:
             ctx["also_lines"] = ",".join(x for x in lines if x and x != str(existing.evidence.line))
             existing.flags = sorted({*existing.flags, *flags})
             return
-        snippet = self.text.splitlines()[line - 1].strip()[:200]
+        snippet, snippet_start = self.snippet(line)
         variant = variant or _variant(algorithm, key_size, flags, context)
         self._assets[key] = CryptoAsset(
             observed=observed,
@@ -72,9 +75,21 @@ class SourceFile:
                 location=str(self.path),
                 line=line,
                 snippet=snippet,
+                snippet_start_line=snippet_start,
                 context={"language": self.language, "file": str(self.path), **(context or {})},
             ),
         )
+
+    def snippet(self, line: int) -> tuple[str, int]:
+        """The hit line with up to SNIPPET_CONTEXT lines either side, blank edges trimmed and
+        common indentation removed. Returns the text and the number of its first line."""
+        lines = [x.rstrip("\r")[:SNIPPET_WIDTH] for x in self.text.split("\n")]
+        start, end = max(1, line - SNIPPET_CONTEXT), min(len(lines), line + SNIPPET_CONTEXT)
+        while start < line and not lines[start - 1].strip():
+            start += 1
+        while end > line and not lines[end - 1].strip():
+            end -= 1
+        return textwrap.dedent("\n".join(lines[start - 1 : end])), start
 
     @property
     def assets(self) -> list[CryptoAsset]:
