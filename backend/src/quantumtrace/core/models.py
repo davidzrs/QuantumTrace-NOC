@@ -85,6 +85,11 @@ class Evidence(Model):
     source_type: SourceType
     location: str = Field(description="File path, cloud ARN or network flow (src:port -> dst:port)")
     line: int | None = None
+    column: int | None = Field(default=None, description="1-based column where the match starts")
+    end_column: int | None = Field(
+        default=None,
+        description="1-based column just past the match; absent when `observed` isn't on the line",
+    )
     snippet: str | None = Field(
         default=None, description="Source lines around `line` (code evidence), dedented"
     )

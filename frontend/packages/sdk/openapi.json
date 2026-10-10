@@ -796,6 +796,30 @@
             ],
             "title": "Line"
           },
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column",
+            "description": "1-based column where the match starts"
+          },
+          "end_column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Column",
+            "description": "1-based column just past the match; absent when `observed` isn't on the line"
+          },
           "snippet": {
             "anyOf": [
               {
@@ -833,6 +857,8 @@
           "source_type",
           "location",
           "line",
+          "column",
+          "end_column",
           "snippet",
           "snippet_start_line",
           "context"

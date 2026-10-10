@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from quantumtrace.core.classifier import load_misuse
 from quantumtrace.core.engine import run_scan
 from quantumtrace.core.models import Confidence, Finding, Observation, ScanResult
 from tests.conftest import summarise
@@ -161,3 +162,92 @@ def test_precise_variants_and_confidence(result: ScanResult) -> None:
     assert one("java/SessionCipher.java", "encryption").asset.confidence is Confidence.HIGH
     assert one("python/report_export.py", "encryption").asset.confidence is Confidence.MEDIUM
     assert one("go/auth-gateway/main.go", "kdf").asset.confidence is Confidence.MEDIUM
+
+
+# --- Misuse, grouping, positions -----------------------------------------------------------
+@pytest.mark.parametrize(
+    ("file", "flag"),
+    [
+        ("python/report_export.py", "hardcoded-key"),
+        ("java/BatchExporter.java", "ecb-mode"),
+        ("go/batch-pipeline/main.go", "ecb-mode"),
+        ("go/auth-gateway/main.go", "hand-rolled-crypto"),
+    ],
+)
+def test_misuse_makes_finding_classically_broken(result: ScanResult, file: str, flag: str) -> None:
+    [f] = [f for f in in_file(result, file) if flag in f.asset.flags]
+    assert f.classification.classically_broken
+    assert f.classification.tier.value != "critical"  # the quantum tier is unchanged
+    assert load_misuse()[flag] in f.classification.rationale
+
+
+def test_repeat_lines_become_more_evidence_with_snippets(result: ScanResult) -> None:
+    [sha1] = [f for f in in_file(result, "go/invoice-service/main.go") if f.asset.usage == "hash"]
+    assert [e.line for e in sha1.asset.all_evidence] == [17, 22]
+    for ev in sha1.asset.all_evidence:
+        assert ev.snippet and "sha1.Sum" in ev.snippet
+        assert "also_lines" not in ev.context
+
+
+def test_evidence_has_columns_of_the_match(result: ScanResult) -> None:
+    for f in result.findings:
+        for ev in f.asset.all_evidence:
+            assert ev.column and ev.line
+            if ev.end_column is not None:
+                line = Path(ev.location).read_text().split("\n")[ev.line - 1]
+                assert line[ev.column - 1 : ev.end_column - 1] == f.asset.observed
+
+
+def scan_source(tmp_path: Path, name: str, code: str) -> ScanResult:
+    path = tmp_path / name
+    path.write_text(code)
+    return run_scan([path])
+
+
+def test_gcm_and_cbc_in_one_file_are_two_findings(tmp_path: Path) -> None:
+    code = (
+        "import javax.crypto.Cipher;\n"
+        "class C {\n"
+        '  byte[] KEY = "0123456789abcdef0123456789abcdef".getBytes();\n'
+        '  Cipher a = Cipher.getInstance("AES/GCM/NoPadding");\n'
+        '  Cipher b = Cipher.getInstance("AES/CBC/PKCS5Padding");\n'
+        "}\n"
+    )
+    result = scan_source(tmp_path, "C.java", code)
+    assert sorted(f.asset.variant or "" for f in result.findings) == ["AES-256-CBC", "AES-256-GCM"]
+    assert {f.asset.evidence.line for f in result.findings} == {4, 5}
+
+
+@pytest.mark.parametrize(
+    ("name", "code"),
+    [
+        ("comments.py", "import hashlib\n# hashlib.md5(x) was the old way\nx = 1  # hashlib.sha1(\n"),
+        ("docstring.py", 'import hashlib\n\ndef f():\n    """Replaces hashlib.md5(data)."""\n'),
+        ("strings.py", 'import hashlib\nlog("call hashlib.md5() to hash")\n'),
+        ("defs.py", "def HKDF(salt):\n    return salt\n\nclass PBKDF2HMAC(object):\n    pass\n"),
+        ("attrs.py", "class W:\n    def k(self):\n        return self.rsa.generate_private_key(1)\n"),
+        ("Comments.java", "class C {\n  // Cipher.getInstance(\"DES\")\n  /* MessageDigest"
+         ".getInstance(\"MD5\") */\n}\n"),
+        ("comments.go", 'package main\nimport "crypto/md5"\n// md5.Sum(b) is gone\n'
+         "/* md5.New() */\nvar s = `md5.Sum(x)`\n"),
+    ],
+)  # fmt: skip
+def test_comments_strings_and_names_are_not_findings(tmp_path: Path, name: str, code: str) -> None:
+    assert scan_source(tmp_path, name, code).findings == []
+
+
+def test_masking_keeps_real_calls_and_their_lines(tmp_path: Path) -> None:
+    code = (
+        "import hashlib\n"
+        '"""Module docstring mentioning hashlib.sha1(x)."""\n'
+        "# hashlib.md5()\n"
+        'URL = "http://x#frag"  # trailing comment\n'
+        'h = hashlib.new("md5")\n'
+        "q = '''\nhashlib.sha1(\n'''\n"
+        "d = hashlib.sha256(b'#')\n"
+        "from cryptography.hazmat.primitives import hashes\n"
+        "e = cryptography.hazmat.primitives.hashes.SHA384()\n"
+    )
+    result = scan_source(tmp_path, "keep.py", code)
+    found = sorted((f.classification.name, f.asset.evidence.line) for f in result.findings)
+    assert found == [("MD5", 5), ("SHA-256", 9), ("SHA-384", 11)]

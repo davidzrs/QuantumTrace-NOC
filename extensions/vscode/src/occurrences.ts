@@ -34,11 +34,11 @@ export function occurrences(
   for (const finding of findings) {
     const { evidence, observed } = finding.asset;
     if (evidence.source_type !== "code" || finding.classification.tier === "safe") continue;
-    for (const line of reportedLines(finding)) {
-      const text = lineAt(line);
+    for (const place of reportedPlaces(finding)) {
+      const text = lineAt(place.line);
       if (text === undefined) continue;
-      const [start, end] = span(text, observed);
-      out.push({ finding, line, start, end, key: occurrenceKey(finding, text) });
+      const [start, end] = span(text, observed, place.column);
+      out.push({ finding, line: place.line, start, end, key: occurrenceKey(finding, text) });
     }
   }
   return out;
@@ -58,18 +58,26 @@ export function mostSevereFirst(items: readonly Occurrence[]): Occurrence[] {
   return [...items].sort((a, b) => rank(a) - rank(b));
 }
 
-/** The engine reports the first hit in `evidence.line` and repeats in `context.also_lines`. */
-function reportedLines(finding: Finding): number[] {
-  const { line, context } = finding.asset.evidence;
-  const repeats = (context.also_lines ?? "").split(",").map(Number);
-  const oneBased = [line, ...repeats].filter(
-    (n): n is number => n !== null && Number.isInteger(n) && n > 0,
-  );
-  return [...new Set(oneBased)].map((n) => n - 1);
+/** The engine reports the first hit in `evidence` and repeats in the file in `more_evidence`,
+ * one-based. Returned zero-based, one place per line. */
+function reportedPlaces(finding: Finding): { line: number; column: number | null }[] {
+  const seen = new Set<number>();
+  const places: { line: number; column: number | null }[] = [];
+  for (const e of [finding.asset.evidence, ...finding.asset.more_evidence]) {
+    if (e.source_type !== "code" || e.line === null || !Number.isInteger(e.line) || e.line < 1) continue;
+    if (seen.has(e.line)) continue;
+    seen.add(e.line);
+    places.push({ line: e.line - 1, column: e.column !== null && e.column > 0 ? e.column - 1 : null });
+  }
+  return places;
 }
 
-/** The observed call when it is on the line verbatim, otherwise the line without its indentation. */
-function span(text: string, observed: string): [number, number] {
+/** The observed call where the engine found it, else wherever it is on the line (the file may
+ * have changed since the scan), else the line without its indentation. */
+function span(text: string, observed: string, column: number | null = null): [number, number] {
+  if (observed && column !== null && text.startsWith(observed, column)) {
+    return [column, column + observed.length];
+  }
   const at = observed ? text.indexOf(observed) : -1;
   if (at >= 0) return [at, at + observed.length];
   const start = text.length - text.trimStart().length;

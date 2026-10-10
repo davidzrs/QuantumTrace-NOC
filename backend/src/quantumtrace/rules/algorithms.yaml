@@ -13,6 +13,14 @@
 # NIST references: FIPS 203 = ML-KEM, FIPS 204 = ML-DSA, FIPS 205 = SLH-DSA,
 #   SP 800-208 = LMS/XMSS, IR 8547 = transition timeline (deprecate 2030 / disallow 2035).
 
+# Misuse flags a scanner can set on an asset. Any of them makes the finding classically broken
+# (whatever the primitive's quantum tier): the data is exposed today, no quantum computer needed.
+# The text is appended to the rule's rationale.
+misuse:
+  ecb-mode: ECB mode encrypts equal blocks to equal ciphertext, so patterns in the data leak.
+  hardcoded-key: The key is written in the source, so anyone with the code can decrypt.
+  hand-rolled-crypto: A home-made construction instead of a vetted library call; treat it as broken until reviewed.
+
 rules:
   # ---------------------------------------------------------------- Shor-vulnerable (critical)
   - id: rsa
@@ -465,7 +473,7 @@ rules:
     name: No encryption
     primitive: protocol
     threat: none
-    tier: critical
+    tier: medium  # not a quantum risk: classically_broken carries the weight
     classically_broken: true
     replacement: TLS 1.3 with X25519MLKEM768
     rationale: Traffic is readable today, no quantum computer required.

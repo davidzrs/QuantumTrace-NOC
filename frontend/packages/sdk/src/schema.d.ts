@@ -254,6 +254,16 @@ export interface components {
             /** Line */
             line: number | null;
             /**
+             * Column
+             * @description 1-based column where the match starts
+             */
+            column: number | null;
+            /**
+             * End Column
+             * @description 1-based column just past the match; absent when `observed` isn't on the line
+             */
+            end_column: number | null;
+            /**
              * Snippet
              * @description Source lines around `line` (code evidence), dedented
              */

@@ -253,7 +253,7 @@ function Row({ row, expanded, onToggle }: { row: FixRow; expanded: boolean; onTo
             {members.length > 3 && ", …"}
           </span>
           {row.sessions > members.length && (
-            <span className="text-xs text-ink-muted tabular-nums">{row.sessions} sessions</span>
+            <span className="text-xs text-ink-muted tabular-nums">{row.sessions} {repeatNoun(f, row.sessions)}</span>
           )}
         </span>
       </td>
@@ -285,16 +285,23 @@ function Row({ row, expanded, onToggle }: { row: FixRow; expanded: boolean; onTo
 
 const LANGUAGE: Record<string, string> = { go: "Go", java: "Java", py: "Python" };
 
+/** Network repeats are sessions; in code and cloud they are further lines or keys. */
+function repeatNoun(f: Finding, n: number): string {
+  const noun = f.asset.evidence.source_type === "network" ? "session" : "occurrence";
+  return n === 1 ? noun : `${noun}s`;
+}
+
 function placesNote(row: FixRow): string {
   const { lead: f, members } = row;
   if (members.length === 1) {
-    return row.sessions > 1 ? `${row.sessions} sessions to one server` : "One place";
+    if (row.sessions <= 1) return "One place";
+    return f.asset.evidence.source_type === "network" ? `${row.sessions} sessions to one server` : `${row.sessions} lines in one file`;
   }
   const usage = usageLabel(f.asset.usage).toLowerCase();
   const code = members.every((m) => m.asset.evidence.source_type === "code");
   const langs = [...new Set(members.map((m) => LANGUAGE[m.asset.evidence.location.split(".").pop() ?? ""]).filter(Boolean))];
   const across = code && langs.length > 1 ? `, across ${langs.slice(0, -1).join(", ")} and ${langs.at(-1)}` : "";
-  const sessions = row.sessions > members.length ? `, ${row.sessions} sessions` : "";
+  const sessions = row.sessions > members.length ? `, ${row.sessions} ${repeatNoun(f, row.sessions)}` : "";
   return `Same ${usage} in ${members.length} ${code ? "files" : "places"}${across}${sessions}`;
 }
 
@@ -456,7 +463,7 @@ function strengthNote(f: Finding): string {
 function EvidenceView({ finding: f }: { finding: Finding }) {
   const e = f.asset.evidence;
   const [allSessions, setAllSessions] = useState(false);
-  if (e.snippet) return <CodeSnippet finding={f} />;
+  if (e.snippet) return <SnippetList finding={f} />;
   const context = Object.entries(e.context ?? {}).filter(([, v]) => v);
   const more = f.asset.more_evidence;
   const shown = allSessions ? more : more.slice(0, SESSIONS_SHOWN);
@@ -497,19 +504,37 @@ function EvidenceView({ finding: f }: { finding: Finding }) {
   );
 }
 
-function CodeSnippet({ finding: f }: { finding: Finding }) {
-  const e = f.asset.evidence;
+const SNIPPETS_SHOWN = 3;
+
+/** One snippet per line the asset was seen on in this file (repeats are in `more_evidence`). */
+function SnippetList({ finding: f }: { finding: Finding }) {
+  const [all, setAll] = useState(false);
+  const places = [f.asset.evidence, ...f.asset.more_evidence];
+  const shown = all ? places : places.slice(0, SNIPPETS_SHOWN);
+  if (places.length === 1) return <CodeSnippet finding={f} evidence={f.asset.evidence} />;
+  return (
+    <div className="grid min-w-0 gap-3">
+      <span className="text-[13px] text-ink-muted">Seen on {places.length} lines</span>
+      {shown.map((e, i) => (
+        <CodeSnippet key={i} finding={f} evidence={e} />
+      ))}
+      {places.length > SNIPPETS_SHOWN && (
+        <button type="button" aria-expanded={all} onClick={() => setAll((a) => !a)} className="link justify-self-start text-sm font-semibold">
+          {all ? "Show fewer" : `Show all ${places.length}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CodeSnippet({ finding: f, evidence: e }: { finding: Finding; evidence: Evidence }) {
   if (!e.snippet) return null;
   const meta = TIER[f.classification.tier];
   const first = e.snippet_start_line ?? e.line ?? 1;
   const lines = e.snippet.split("\n");
-  const also = e.context?.also_lines?.split(",").filter(Boolean) ?? [];
   return (
     <figure className="m-0 grid min-w-0 gap-1.5">
-      <figcaption className="font-mono text-xs break-all text-ink-muted">
-        {evidenceLabel(e)}
-        {also.length > 0 && <span className="font-sans"> · also on line{also.length > 1 ? "s" : ""} {also.join(", ")}</span>}
-      </figcaption>
+      <figcaption className="font-mono text-xs break-all text-ink-muted">{evidenceLabel(e)}</figcaption>
       <pre className="code-block">
         <code className="grid min-w-max">
           {lines.map((text, i) => {
@@ -526,7 +551,7 @@ function CodeSnippet({ finding: f }: { finding: Finding }) {
                 </span>
                 <span className="pr-6 whitespace-pre">
                   {hit && <span className="sr-only">Flagged line {n}: </span>}
-                  {text || " "}
+                  {hit ? <MarkedLine text={text} match={e.end_column != null ? f.asset.observed : null} color={meta.color} /> : text || " "}
                 </span>
               </span>
             );
@@ -534,6 +559,19 @@ function CodeSnippet({ finding: f }: { finding: Finding }) {
         </code>
       </pre>
     </figure>
+  );
+}
+
+/** The flagged line with the matched call underlined (snippets are dedented, so find it by text). */
+function MarkedLine({ text, match, color }: { text: string; match: string | null; color: string }) {
+  const at = match ? text.indexOf(match) : -1;
+  if (!match || at < 0) return <>{text || " "}</>;
+  return (
+    <>
+      {text.slice(0, at)}
+      <span style={{ textDecoration: `underline 2px ${color}`, textUnderlineOffset: "3px" }}>{match}</span>
+      {text.slice(at + match.length)}
+    </>
   );
 }
 

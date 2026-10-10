@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { finding, md5 } from "./fixtures";
+import { finding, md5, repeat } from "./fixtures";
 import { applyEdits, type Edit, mostSevereFirst, occurrences } from "./occurrences";
 
 const SOURCE = [
@@ -45,10 +45,18 @@ describe("occurrences", () => {
 
   it("lists a line once even when the engine repeats it", () => {
     const repeated = finding({
-      asset: { observed: "hashlib.md5" },
-      evidence: { line: 4, context: { also_lines: "6,6,4" } },
+      asset: { observed: "hashlib.md5", more_evidence: [repeat(6), repeat(6), repeat(4)] },
+      evidence: { line: 4 },
     });
     expect(occurrences([repeated], lineAt).map((o) => o.line)).toEqual([3, 5]);
+  });
+
+  it("uses the engine's column when the call is still there", () => {
+    const twice = finding({ asset: { observed: "md5" }, evidence: { line: 1, column: 15 } });
+    const [hit] = occurrences([twice], () => "md5_name = h.(md5(x))");
+    expect([hit?.start, hit?.end]).toEqual([14, 17]);
+    const [moved] = occurrences([twice], () => "  md5(x)");
+    expect([moved?.start, moved?.end]).toEqual([2, 5]);
   });
 
   it("gives the same key to a line that only moved", () => {

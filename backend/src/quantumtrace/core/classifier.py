@@ -42,8 +42,9 @@ def normalise(name: str) -> str:
 
 
 class Classifier:
-    def __init__(self, rules: list[Rule]) -> None:
+    def __init__(self, rules: list[Rule], misuse: dict[str, str] | None = None) -> None:
         self.rules = rules
+        self.misuse = misuse or {}
         self._index: dict[str, Rule] = {}
         for rule in rules:
             for key in {normalise(rule.id), normalise(rule.name), *map(normalise, rule.aliases)}:
@@ -86,6 +87,9 @@ class Classifier:
                 nist_quantum_level=rule.nist_quantum_level,
                 rationale=rule.rationale,
             )
+        if misused := [self.misuse[f] for f in asset.flags if f in self.misuse]:
+            classification.classically_broken = True
+            classification.rationale = " ".join([classification.rationale, *misused])
         return Finding(asset=asset, classification=classification)
 
 
@@ -104,13 +108,22 @@ def classical_bits(rule_id: str, key_size: int | None) -> int | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def _rules_file() -> dict[str, Any]:
+    text = resources.files("quantumtrace.rules").joinpath("algorithms.yaml").read_text()
+    data: dict[str, Any] = yaml.safe_load(text)
+    return data
+
+
 def load_rules(data: dict[str, Any] | None = None) -> list[Rule]:
-    if data is None:
-        text = resources.files("quantumtrace.rules").joinpath("algorithms.yaml").read_text()
-        data = yaml.safe_load(text)
-    return [Rule.model_validate(r) for r in data["rules"]]
+    return [Rule.model_validate(r) for r in (data or _rules_file())["rules"]]
+
+
+def load_misuse(data: dict[str, Any] | None = None) -> dict[str, str]:
+    """Misuse flag -> why it makes a finding classically broken."""
+    return {str(k): str(v) for k, v in (data or _rules_file()).get("misuse", {}).items()}
 
 
 @lru_cache(maxsize=1)
 def default_classifier() -> Classifier:
-    return Classifier(load_rules())
+    return Classifier(load_rules(), load_misuse())

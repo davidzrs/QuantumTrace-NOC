@@ -29,6 +29,8 @@ export function finding(overrides: Overrides = {}): Finding {
         source_type: "code",
         location: "license_token.py",
         line: 6,
+        column: null,
+        end_column: null,
         snippet: null,
         snippet_start_line: null,
         context: { language: "python" },
@@ -53,10 +55,30 @@ export function finding(overrides: Overrides = {}): Finding {
   };
 }
 
+/** A further place in the same file, as the engine lists it in `more_evidence`. */
+export function repeat(line: number, column: number | null = null): Finding["asset"]["evidence"] {
+  return {
+    source_type: "code",
+    location: "license_token.py",
+    line,
+    column,
+    end_column: null,
+    snippet: null,
+    snippet_start_line: null,
+    context: { language: "python" },
+  };
+}
+
 /** MD5 called on lines 4 and 6 (one-based), merged by the engine into one finding. */
 export const md5 = finding({
-  asset: { observed: "hashlib.md5", algorithm: "MD5", key_size: null, usage: "hash" },
-  evidence: { line: 4, context: { language: "python", also_lines: "6" } },
+  asset: {
+    observed: "hashlib.md5",
+    algorithm: "MD5",
+    key_size: null,
+    usage: "hash",
+    more_evidence: [repeat(6)],
+  },
+  evidence: { line: 4, context: { language: "python" } },
   classification: {
     rule_id: "md5",
     name: "MD5",

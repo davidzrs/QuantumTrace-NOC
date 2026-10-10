@@ -7,6 +7,8 @@ const ev = (location: string, source_type: Evidence["source_type"] = "code"): Ev
   source_type,
   location,
   line: 1,
+  column: null,
+  end_column: null,
   snippet: null,
   snippet_start_line: null,
   context: {},

@@ -67,3 +67,34 @@ def test_duplicate_alias_rejected() -> None:
 
 def test_unknown_algorithm_is_unknown_tier() -> None:
     assert default_classifier().lookup("ROT13") is None
+
+
+def test_only_shor_rules_are_critical() -> None:
+    for rule in load_rules():
+        if rule.tier is RiskTier.CRITICAL:
+            assert rule.threat is QuantumThreat.SHOR, rule.id
+
+
+def test_plaintext_is_broken_but_not_a_quantum_tier() -> None:
+    rule = default_classifier().lookup("HTTP")
+    assert rule is not None
+    assert (rule.tier, rule.threat, rule.classically_broken) == (
+        RiskTier.MEDIUM,
+        QuantumThreat.NONE,
+        True,
+    )
+
+
+def test_misuse_flags_mark_finding_broken_and_explain_why() -> None:
+    from quantumtrace.core.models import CryptoAsset, Evidence, SourceType
+
+    def asset(flags: list[str]) -> CryptoAsset:
+        ev = Evidence(source_type=SourceType.CODE, location="x.py", line=1)
+        return CryptoAsset(observed="AES", algorithm="AES", key_size=256, flags=flags, evidence=ev)
+
+    clean = default_classifier().classify(asset([]))
+    keyed = default_classifier().classify(asset(["hardcoded-key", "cbc-mode"]))
+    assert not clean.classification.classically_broken
+    assert keyed.classification.classically_broken
+    assert keyed.classification.tier is RiskTier.SAFE  # quantum tier is unchanged
+    assert "written in the source" in keyed.classification.rationale

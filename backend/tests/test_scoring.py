@@ -1,4 +1,5 @@
-"""Per-source scores: what a report filtered to one source shows as its risk score."""
+"""Scores: per-source scores, and the weights (classically broken > Shor key exchange and
+encryption > Shor authentication)."""
 
 from __future__ import annotations
 
@@ -6,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from quantumtrace.core.classifier import default_classifier
 from quantumtrace.core.engine import run_scan
-from quantumtrace.core.models import ScanResult, SourceType
-from quantumtrace.core.scoring import score
+from quantumtrace.core.models import CryptoAsset, Evidence, Exposure, ScanResult, SourceType
+from quantumtrace.core.scoring import finding_weight, score
 
 
 @pytest.fixture(scope="module")
@@ -35,3 +37,32 @@ def test_source_counts_add_up_to_the_whole_scan(result: ScanResult) -> None:
 
 def test_empty_scan_has_no_source_scores(tmp_path: Path) -> None:
     assert run_scan([tmp_path]).score_by_source == {}
+
+
+def weight(algorithm: str, usage: str, flags: list[str] | None = None) -> float:
+    ev = Evidence(source_type=SourceType.CLOUD, location="arn:x")
+    asset = CryptoAsset(
+        observed=algorithm, algorithm=algorithm, usage=usage, flags=flags or [],
+        exposure=Exposure.INTERNAL, evidence=ev,
+    )  # fmt: skip
+    return finding_weight(default_classifier().classify(asset))
+
+
+def test_harvest_now_decrypt_later_outweighs_signatures() -> None:
+    assert weight("RSA_2048", "ENCRYPT_DECRYPT") > weight("RSA_2048", "SIGN_VERIFY")
+    assert weight("ECDHE", "tls-key-exchange") > weight("ECDSA", "tls-authentication")
+    assert weight("RSA", "ssh-host-key") < weight("RSA", "tls-key-exchange")
+
+
+def test_misuse_outweighs_grover() -> None:
+    assert weight("AES-128", "encryption", ["ecb-mode"]) > weight("AES-128", "encryption")
+    assert weight("AES-128", "encryption", ["ecb-mode"]) == weight("SHA-1", "hash")
+    assert weight("AES-128", "encryption", ["ecb-mode"]) == weight("RSA", "tls-key-exchange")
+
+
+def test_kms_encryption_key_ranks_above_signing_keys(samples: Path) -> None:
+    result = run_scan([samples / "cloud-posture"])
+    rsa = [f for f in result.findings if f.classification.rule_id == "rsa" and f.asset.usage]
+    enc = [finding_weight(f) for f in rsa if f.asset.usage == "ENCRYPT_DECRYPT"]
+    sig = [finding_weight(f) for f in rsa if f.asset.usage == "SIGN_VERIFY"]
+    assert enc and sig and min(enc) > max(sig)

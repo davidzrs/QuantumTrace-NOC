@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import re
 import textwrap
 from dataclasses import dataclass, field
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from quantumtrace.core.classifier import normalise
 from quantumtrace.core.models import Confidence, CryptoAsset, Evidence, Observation, SourceType
+from quantumtrace.scanners.code.lexer import lex
 
 # KEY_LEN = 32, KEY_BITS = 256, keyLen = 32, KEY_LEN_BITS = 256 (Python / Java / Go constants)
 _KEY_CONST = re.compile(
@@ -20,14 +22,29 @@ _KEY_LITERAL = re.compile(
 )
 SNIPPET_CONTEXT = 2  # lines shown above and below the hit
 SNIPPET_WIDTH = 200
+# A rule match preceded by `x.` is an attribute of some object (`self.rsa.generate_private_key`),
+# not the library, unless the dotted chain starts at one of these package roots.
+PACKAGE_ROOTS = {"cryptography", "Crypto", "Cryptodome", "javax", "java", "golang", "crypto"}
+_DEFINITION = re.compile(r"(?:\bdef|\bfunc|\bclass|\binterface|\bstruct)\s+$")
 
 
 @dataclass
 class SourceFile:
+    """One source file. `text` has comments blanked out (offsets unchanged) and is what rules
+    match against; `raw` is the file as written, used for snippets."""
+
     path: Path
     language: str
     text: str
-    _assets: dict[tuple[str, int | None, str], CryptoAsset] = field(default_factory=dict)
+    raw: str = field(init=False)
+    _strings: list[tuple[int, int]] = field(init=False)
+    _assets: dict[tuple[str, int | None, str, str | None], CryptoAsset] = field(
+        default_factory=dict
+    )
+
+    def __post_init__(self) -> None:
+        lexed = lex(self.text, self.language)
+        self.raw, self.text, self._strings = self.text, lexed.text, lexed.strings
 
     @classmethod
     def load(cls, path: Path, language: str) -> SourceFile:
@@ -35,6 +52,23 @@ class SourceFile:
 
     def line_of(self, pos: int) -> int:
         return self.text.count("\n", 0, pos) + 1
+
+    def column_of(self, pos: int) -> int:
+        return pos - self.text.rfind("\n", 0, pos)
+
+    def ignored(self, pos: int) -> bool:
+        """A match that isn't a library call: inside a string literal, the name of a definition
+        (`def HKDF(`), or an attribute of an object (`self.rsa.generate_private_key`)."""
+        k = bisect.bisect_right(self._strings, (pos, len(self.text))) - 1
+        if k >= 0 and self._strings[k][0] <= pos < self._strings[k][1]:
+            return True
+        line_start = self.text.rfind("\n", 0, pos) + 1
+        if _DEFINITION.search(self.text, line_start, pos):
+            return True
+        if pos == 0 or self.text[pos - 1] != ".":
+            return False
+        chain = re.search(r"([A-Za-z_][\w.]*)\.$", self.text[line_start:pos])
+        return chain is None or chain.group(1).split(".")[0] not in PACKAGE_ROOTS
 
     def emit(
         self,
@@ -49,18 +83,19 @@ class SourceFile:
         variant: str | None = None,
         confidence: Confidence = Confidence.HIGH,
     ) -> None:
-        """Record an asset; repeats of the same (algorithm, size, usage) in a file are merged,
-        keeping the first line and listing the others in context['also_lines']."""
+        """Record an asset. Repeats of the same (algorithm, size, usage, variant) in a file become
+        one asset: the first place is `evidence`, later lines go to `more_evidence`."""
+        if self.ignored(pos):
+            return
         line = self.line_of(pos)
-        key = (normalise(algorithm), key_size, usage)
+        variant = variant or _variant(algorithm, key_size, flags, context)
+        key = (normalise(algorithm), key_size, usage, variant)
+        evidence = self._evidence(pos, observed, context)
         if (existing := self._assets.get(key)) is not None:
-            ctx = existing.evidence.context
-            lines = [*ctx.get("also_lines", "").split(","), str(line)]
-            ctx["also_lines"] = ",".join(x for x in lines if x and x != str(existing.evidence.line))
+            if all(e.line != line for e in existing.all_evidence):
+                existing.more_evidence.append(evidence)
             existing.flags = sorted({*existing.flags, *flags})
             return
-        snippet, snippet_start = self.snippet(line)
-        variant = variant or _variant(algorithm, key_size, flags, context)
         self._assets[key] = CryptoAsset(
             observed=observed,
             algorithm=algorithm,
@@ -70,20 +105,30 @@ class SourceFile:
             observation=Observation.IN_CODE,
             confidence=confidence,
             flags=sorted(set(flags)),
-            evidence=Evidence(
-                source_type=SourceType.CODE,
-                location=str(self.path),
-                line=line,
-                snippet=snippet,
-                snippet_start_line=snippet_start,
-                context={"language": self.language, "file": str(self.path), **(context or {})},
-            ),
+            evidence=evidence,
+        )
+
+    def _evidence(self, pos: int, observed: str, context: dict[str, str] | None) -> Evidence:
+        line = self.line_of(pos)
+        column = self.column_of(pos)
+        snippet, snippet_start = self.snippet(line)
+        # `observed` is sometimes a resolved constant that isn't on the line: no end column then
+        end = column + len(observed) if self.raw.startswith(observed, pos) else None
+        return Evidence(
+            source_type=SourceType.CODE,
+            location=str(self.path),
+            line=line,
+            column=column,
+            end_column=end,
+            snippet=snippet,
+            snippet_start_line=snippet_start,
+            context={"language": self.language, "file": str(self.path), **(context or {})},
         )
 
     def snippet(self, line: int) -> tuple[str, int]:
         """The hit line with up to SNIPPET_CONTEXT lines either side, blank edges trimmed and
         common indentation removed. Returns the text and the number of its first line."""
-        lines = [x.rstrip("\r")[:SNIPPET_WIDTH] for x in self.text.split("\n")]
+        lines = [x.rstrip("\r")[:SNIPPET_WIDTH] for x in self.raw.split("\n")]
         start, end = max(1, line - SNIPPET_CONTEXT), min(len(lines), line + SNIPPET_CONTEXT)
         while start < line and not lines[start - 1].strip():
             start += 1
@@ -93,9 +138,6 @@ class SourceFile:
 
     @property
     def assets(self) -> list[CryptoAsset]:
-        for a in self._assets.values():
-            if not a.evidence.context.get("also_lines"):
-                a.evidence.context.pop("also_lines", None)
         return list(self._assets.values())
 
     def symmetric_key_hint(self) -> tuple[int | None, bool]:

@@ -7,7 +7,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from quantumtrace.core.models import Exposure, Finding, RiskScore, RiskTier, SourceType, TierCounts
+from quantumtrace.core.models import (
+    Exposure,
+    Finding,
+    QuantumThreat,
+    RiskScore,
+    RiskTier,
+    SourceType,
+    TierCounts,
+)
 
 TIER_WEIGHT: dict[RiskTier, float] = {
     RiskTier.CRITICAL: 10.0,
@@ -21,15 +29,28 @@ EXPOSURE_MULTIPLIER: dict[Exposure, float] = {
     Exposure.INTERNAL: 1.0,
     Exposure.UNKNOWN: 1.0,
 }
+# Harvest-Now-Decrypt-Later hits confidentiality: a key exchange or ciphertext recorded today is
+# decrypted once a quantum computer exists. Forging a signature needs that computer at the time
+# of the attack, so Shor-exposed authentication weighs less. Unlisted usages keep full weight.
+AUTHENTICATION_USAGES = {
+    "signature", "sign_verify", "certificate-key", "certificate-signature",
+    "tls-authentication", "ssh-host-key",
+}  # fmt: skip
+AUTHENTICATION_MULTIPLIER = 0.7
 MAX_PER_FINDING = BROKEN_WEIGHT * EXPOSURE_MULTIPLIER[Exposure.INTERNET]
 
 GRADES = ((20.0, "A"), (40.0, "B"), (60.0, "C"), (80.0, "D"))
 
 
 def finding_weight(finding: Finding) -> float:
-    c = finding.classification
-    base = BROKEN_WEIGHT if c.classically_broken else TIER_WEIGHT[c.tier]
-    return base * EXPOSURE_MULTIPLIER[finding.asset.exposure]
+    c, a = finding.classification, finding.asset
+    if c.classically_broken:
+        base = BROKEN_WEIGHT
+    elif c.threat is QuantumThreat.SHOR and (a.usage or "").lower() in AUTHENTICATION_USAGES:
+        base = TIER_WEIGHT[c.tier] * AUTHENTICATION_MULTIPLIER
+    else:
+        base = TIER_WEIGHT[c.tier]
+    return base * EXPOSURE_MULTIPLIER[a.exposure]
 
 
 def score(findings: Sequence[Finding]) -> RiskScore:

@@ -62,6 +62,7 @@ export function evidenceLabel(e: Evidence): string {
   const ctx = e.context ?? {};
   if (ctx.json_path) return `${e.location}#${ctx.json_path}`;
   if (ctx.packet) return `${e.location} (packet ${ctx.packet})`;
+  if (e.line && e.column) return `${e.location}:${e.line}:${e.column}`;
   return e.line ? `${e.location}:${e.line}` : e.location;
 }
 

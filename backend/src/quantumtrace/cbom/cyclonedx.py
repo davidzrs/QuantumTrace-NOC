@@ -12,6 +12,7 @@ from typing import Any
 from uuid import UUID
 
 from quantumtrace import __version__
+from quantumtrace.core.classifier import load_misuse
 from quantumtrace.core.models import Finding, Primitive, QuantumThreat, ScanResult
 
 SPEC_VERSION = "1.6"
@@ -57,7 +58,9 @@ def _bom_ref(f: Finding) -> str:
     variant = (
         f"/{f.asset.variant}" if f.asset.variant and c.primitive is not Primitive.PROTOCOL else ""
     )
-    return re.sub(r"[^a-z0-9/.\-]+", "-", f"crypto/{rule}{size}{variant}".lower())
+    # a hard-coded key or hand-rolled code is broken where the same algorithm elsewhere isn't
+    misused = "/misused" if set(f.asset.flags) & load_misuse().keys() else ""
+    return re.sub(r"[^a-z0-9/.\-]+", "-", f"crypto/{rule}{size}{variant}{misused}".lower())
 
 
 def _component(ref: str, findings: list[Finding]) -> dict[str, Any]:
@@ -114,6 +117,8 @@ def _component(ref: str, findings: list[Finding]) -> dict[str, Any]:
         occ: dict[str, Any] = {"location": where}
         if ev.line:
             occ["line"] = ev.line
+        if ev.column:
+            occ["offset"] = ev.column
         occ["additionalContext"] = (
             f"[{f.asset.observation.value}, {f.asset.confidence.value} confidence] "
             f"{f.asset.usage or ''} observed={f.asset.observed}"
