@@ -7,7 +7,7 @@
   "publisher": "quantumtrace",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ttlopes/QuantumTrace-NOC.git",
+    "url": "https://github.com/davidzrs/QuantumTrace-NOC.git",
     "directory": "extensions/vscode"
   },
   "engines": {
