@@ -198,6 +198,12 @@ export interface components {
              * @default false
              */
             classically_broken: boolean;
+            /**
+             * Hndl
+             * @description Harvest-now, decrypt-later: Shor breaks it and it protects confidentiality (key exchange, key transport, public-key encryption), so data recorded today can be decrypted later. Signatures, certificates and digests are never exposed this way.
+             * @default false
+             */
+            hndl: boolean;
             /** Nist Reference */
             nist_reference: string | null;
             /** Replacement */

@@ -26,6 +26,7 @@ function finding(tier: RiskTier, usage: string, observation = "negotiated", name
       threat: "none",
       tier,
       classically_broken: false,
+      hndl: false,
       nist_reference: null,
       replacement: null,
       oid: null,

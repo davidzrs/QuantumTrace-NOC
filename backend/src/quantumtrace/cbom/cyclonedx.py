@@ -119,8 +119,9 @@ def _component(ref: str, findings: list[Finding]) -> dict[str, Any]:
             occ["line"] = ev.line
         if ev.column:
             occ["offset"] = ev.column
+        hndl = ", harvest-now-decrypt-later" if f.classification.hndl else ""
         occ["additionalContext"] = (
-            f"[{f.asset.observation.value}, {f.asset.confidence.value} confidence] "
+            f"[{f.asset.observation.value}, {f.asset.confidence.value} confidence{hndl}] "
             f"{f.asset.usage or ''} observed={f.asset.observed}"
         )
         occurrences.append(occ)
@@ -137,6 +138,11 @@ def _component(ref: str, findings: list[Finding]) -> dict[str, Any]:
         ),
         {"name": "quantumtrace:threat", "value": c.threat.value},
         {"name": "quantumtrace:classically-broken", "value": str(c.classically_broken).lower()},
+        # true when any occurrence is exposed; the occurrences say which ones
+        {
+            "name": "quantumtrace:hndl",
+            "value": str(any(f.classification.hndl for f in findings)).lower(),
+        },
         {"name": "quantumtrace:rationale", "value": c.rationale},
     ]
     if c.nist_reference:

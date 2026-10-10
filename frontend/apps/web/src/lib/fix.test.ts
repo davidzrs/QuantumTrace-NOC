@@ -7,7 +7,7 @@ const f = (
   rule: string,
   tier: RiskTier,
   exposure: Finding["asset"]["exposure"],
-  { broken = false, location = "x" } = {},
+  { broken = false, hndl = false, location = "x" } = {},
 ): Finding => ({
   id: String(seq++),
   asset: {
@@ -30,6 +30,7 @@ const f = (
     threat: tier === "critical" ? "shor" : tier === "medium" ? "grover" : "none",
     tier,
     classically_broken: broken,
+    hndl,
     nist_reference: null,
     replacement: null,
     oid: null,
@@ -63,6 +64,15 @@ describe("fixRows", () => {
       "rsa-1024", "rsa", "ecdsa", "md5", "sha1", "aes-256",
     ]);
     expect(rows[2]?.members).toHaveLength(2);
+  });
+
+  it("puts harvest-now, decrypt-later exposure first within the same urgency", () => {
+    const rows = fixRows([
+      f("ecdsa", "critical", "internet"),
+      f("ecdh", "critical", "internal", { hndl: true }),
+      f("rsa-1024", "critical", "unknown", { broken: true }),
+    ]);
+    expect(rows.map((r) => r.lead.classification.rule_id)).toEqual(["rsa-1024", "ecdh", "ecdsa"]);
   });
 
   it("keeps one row per finding when ungrouped", () => {

@@ -26,6 +26,7 @@ function finding(id: string, tier: RiskTier): Finding {
       threat: "shor",
       tier,
       classically_broken: false,
+      hndl: false,
       nist_reference: null,
       replacement: null,
       oid: null,

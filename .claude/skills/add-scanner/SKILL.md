@@ -32,7 +32,8 @@ class MyScanner:
   `crypto-classification` skill, not a special case in the scanner.
 - `key_size`: when known. It selects rules such as `RSA-1024` or `AES-128` vs `AES-256`.
 - `usage`: what the primitive does there (`SIGN_VERIFY`, `tls-key-exchange`, `hash`, ...).
-  Add a human label for any new usage in `frontend/apps/web/src/lib/format.ts`.
+  Add a human label for any new usage in `frontend/packages/ui/src/labels.ts`, and its role in
+  `core/roles.py` (it decides `hndl`; `tests/test_hndl.py` fails on a usage without one).
 - `exposure`: `internet` only when you know it is reachable from outside.
 - `observation`: how the input proves it (`negotiated`, `configured`, `in-code`, `permitted`,
   `offered`). `variant`: the precise form (AES-128-GCM, x25519, RSA-2048).

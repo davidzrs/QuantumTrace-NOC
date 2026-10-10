@@ -650,6 +650,12 @@
             "title": "Classically Broken",
             "default": false
           },
+          "hndl": {
+            "type": "boolean",
+            "title": "Hndl",
+            "description": "Harvest-now, decrypt-later: Shor breaks it and it protects confidentiality (key exchange, key transport, public-key encryption), so data recorded today can be decrypted later. Signatures, certificates and digests are never exposed this way.",
+            "default": false
+          },
           "nist_reference": {
             "anyOf": [
               {
@@ -721,6 +727,7 @@
           "threat",
           "tier",
           "classically_broken",
+          "hndl",
           "nist_reference",
           "replacement",
           "oid",

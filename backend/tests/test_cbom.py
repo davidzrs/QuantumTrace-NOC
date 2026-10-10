@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from cyclonedx.schema import SchemaVersion
 from cyclonedx.validation.json import JsonStrictValidator
@@ -48,3 +49,19 @@ def test_cbom_occurrences_are_precise(samples: Path) -> None:
     assert any("/packet-" in loc for loc in locations)  # network: packet number
     limits = [p for p in bom["metadata"]["properties"] if p["name"] == "quantumtrace:limitation"]
     assert limits
+
+
+def test_cbom_marks_harvest_now_decrypt_later(samples: Path) -> None:
+    bom = to_cyclonedx(run_scan([samples / "cloud-posture"]))
+
+    def hndl(component: dict[str, Any]) -> list[str]:
+        return [p["value"] for p in component["properties"] if p["name"] == "quantumtrace:hndl"]
+
+    names = {c["name"]: c for c in bom["components"]}
+    # the RSA-2048 component holds the KMS encryption key, signing keys and certificates
+    rsa = names["RSA-2048"]
+    assert hndl(rsa) == ["true"]
+    marked = [o["additionalContext"] for o in rsa["evidence"]["occurrences"]
+              if "harvest-now-decrypt-later" in o["additionalContext"]]  # fmt: skip
+    assert marked and all("ENCRYPT_DECRYPT" in m for m in marked)
+    assert hndl(names["AES-256-GCM"]) == ["false"]

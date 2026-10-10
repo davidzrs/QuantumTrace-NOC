@@ -31,7 +31,7 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 
 | Path | What |
 | --- | --- |
-| `backend/src/quantumtrace/core/` | models, classifier, scoring, engine |
+| `backend/src/quantumtrace/core/` | models, classifier, scoring, engine, `roles.py` (usage → role, decides `hndl`) |
 | `backend/src/quantumtrace/rules/` | `algorithms.yaml`, `aws_elb_policies.yaml`, `tls.py` (cipher-suite decomposition) |
 | `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe) |
 | `backend/src/quantumtrace/cbom/` | CycloneDX 1.6 export |
