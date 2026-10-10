@@ -205,10 +205,9 @@ rules:
     primitive: mac
     threat: grover
     tier: medium
-    classically_broken: true
     replacement: HMAC-SHA256
     nist_quantum_level: 0
-    rationale: Deprecated construction over a broken hash; prohibited in modern protocols.
+    rationale: HMAC does not rely on the hash's collision resistance (RFC 6151), so HMAC-MD5 is not broken, but it is deprecated and should be replaced.
     aliases: [HMAC-MD5, HmacMD5]
   - id: sha224
     name: SHA-224

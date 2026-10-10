@@ -85,6 +85,22 @@ def test_plaintext_is_broken_but_not_a_quantum_tier() -> None:
     )
 
 
+def test_hmac_md5_is_deprecated_but_not_broken() -> None:
+    # RFC 6151: HMAC's security doesn't rest on the hash's collision resistance, so the MD5
+    # collisions that break plain MD5 don't break HMAC-MD5.
+    rule = default_classifier().lookup("HmacMD5")
+    assert rule is not None
+    assert (rule.id, rule.tier, rule.threat, rule.classically_broken) == (
+        "hmac-md5",
+        RiskTier.MEDIUM,
+        QuantumThreat.GROVER,
+        False,
+    )
+    assert rule.replacement == "HMAC-SHA256"
+    md5 = default_classifier().lookup("MD5")
+    assert md5 is not None and md5.classically_broken  # the bare hash stays broken
+
+
 def test_misuse_flags_mark_finding_broken_and_explain_why() -> None:
     from quantumtrace.core.models import CryptoAsset, Evidence, SourceType
 
