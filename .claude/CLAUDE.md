@@ -149,6 +149,11 @@ Both halves run on Vercel as two projects from this repo (see the `deploy` skill
   Upstash Redis (Vercel Marketplace). It injects `KV_REST_API_URL`/`KV_REST_API_TOKEN`, and
   `store/repository.py` keeps scans for 7 days. Without them it falls back to process memory
   (fine locally and in Docker).
+- **AI fixes.** Set `GEMINI_API_KEY` (free key from aistudio.google.com) on the API project to
+  turn on "Fix me" for code findings (`ai/fixer.py`, `POST /scans/{id}/findings/{fid}/fix`, the
+  `google-genai` SDK, model `QT_AI_MODEL`, default `gemini-3.5-flash-lite`: ~1 s a fix). It sends the finding's
+  snippet to Google, which may use free-tier inputs for training: fine for the samples, not for
+  private code. `/health` reports `ai_fix`; the web app hides the button when it's false.
 - **Upload caps.** Two limits, both advertised by `/health`. `max_upload_mb` is bytes on the
   wire: Vercel rejects request bodies over 4.5 MB, so it defaults to 4 there (200 elsewhere).
   `max_unpacked_mb` is the size after `.zip` and `.gz` uploads are unpacked: 50 on Vercel (the

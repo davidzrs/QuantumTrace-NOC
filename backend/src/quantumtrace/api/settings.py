@@ -7,13 +7,18 @@ from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_REPO_SAMPLES = Path(__file__).resolve().parents[4] / "samples"
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_REPO_SAMPLES = _REPO_ROOT / "samples"
 _ON_VERCEL = bool(os.environ.get("VERCEL"))
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="QT_", env_file=".env", extra="ignore", populate_by_name=True
+        env_prefix="QT_",
+        # The repo-root .env, wherever the API is started from; a .env in the cwd overrides it.
+        env_file=(_REPO_ROOT / ".env", ".env"),
+        extra="ignore",
+        populate_by_name=True,
     )
 
     api_key: str | None = None  # when set, every /api/v1 route except /health needs X-API-Key
@@ -45,6 +50,23 @@ class Settings(BaseSettings):
             "QT_REDIS_TOKEN", "KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_TOKEN"
         ),
     )
+
+    # "Fix me" on code findings sends the snippet to Gemini. Off unless a key is set; a free
+    # key comes from aistudio.google.com.
+    gemini_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("QT_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    )
+    # Fastest reliable free-tier option in our benchmark: ~1 s per fix, 24/24 checks. Flash
+    # (gemini-flash-latest) writes slightly better fixes but takes 5-30 s, is capped at 20 free
+    # requests a day, and timed out often.
+    ai_model: str = "gemini-3.5-flash-lite"
+    # Gemini 3 thinking level: minimal (Flash-Lite only), low, medium, high. Empty = model default.
+    ai_thinking: str | None = "low"
+
+    @property
+    def ai_fix(self) -> bool:
+        return bool(self.gemini_api_key)
 
     @property
     def cors_origin_list(self) -> list[str]:

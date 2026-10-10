@@ -20,6 +20,7 @@ export type Sample = Schemas["Sample"];
 export type ScanNote = Schemas["ScanNote"];
 export type Observation = Schemas["Observation"];
 export type Confidence = Schemas["Confidence"];
+export type FixSuggestion = Schemas["FixSuggestion"];
 
 /** A file and its path inside the folder it came from. */
 export interface UploadItem {
@@ -83,6 +84,13 @@ export function createClient({ baseUrl, apiKey, fetch: fetchImpl }: ClientOption
     getCbom: (scanId: string) =>
       unwrap(
         http.GET("/api/v1/scans/{scan_id}/cbom", { params: { path: { scan_id: scanId } } }),
+      ),
+    /** Ask the API's LLM to rewrite a code finding's snippet. Sends the snippet to Gemini. */
+    suggestFix: (scanId: string, findingId: string) =>
+      unwrap(
+        http.POST("/api/v1/scans/{scan_id}/findings/{finding_id}/fix", {
+          params: { path: { scan_id: scanId, finding_id: findingId } },
+        }),
       ),
     scanSample: (sample: string) =>
       unwrap(http.POST("/api/v1/scans/sample", { body: { sample } })),
