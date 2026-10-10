@@ -1,9 +1,10 @@
 # Static build of the web app served by nginx (for docker compose; production uses Vercel).
 # Build context: repository root.
 FROM node:25-alpine AS build
-RUN corepack enable
 WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Node 25+ no longer bundles corepack: install the pnpm pinned in package.json's packageManager.
+RUN npm install -g "$(node -p "require('./package.json').packageManager")"
 COPY frontend ./frontend
 RUN pnpm install --frozen-lockfile
 ARG VITE_API_URL=http://localhost:8000
