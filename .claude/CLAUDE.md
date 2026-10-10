@@ -141,6 +141,9 @@ Both halves run on Vercel as two projects from this repo (see the `deploy` skill
   (it sits outside the root directory), so the web app is upload-only.
 - **Web → Vercel**, root directory `frontend/apps/web`. Set `VITE_API_URL` to the API project's
   URL. Anything in `VITE_*` is public.
+- **Production only.** Both `vercel.json` files set `git.deploymentEnabled` to `main` only. The
+  Hobby plan blocks preview deploys of commits by anyone outside the Vercel team, which left a red
+  check on teammates' PRs. CI is the PR gate, and a merge to `main` deploys.
 - **Storage.** Serverless requests can land on different instances, so the API project needs
   Upstash Redis (Vercel Marketplace). It injects `KV_REST_API_URL`/`KV_REST_API_TOKEN`, and
   `store/repository.py` keeps scans for 7 days. Without them it falls back to process memory
