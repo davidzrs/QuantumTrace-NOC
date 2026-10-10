@@ -777,12 +777,24 @@
           "version": {
             "type": "string",
             "title": "Version"
+          },
+          "max_upload_mb": {
+            "type": "integer",
+            "title": "Max Upload Mb",
+            "description": "Largest total upload a scan accepts"
+          },
+          "persistent": {
+            "type": "boolean",
+            "title": "Persistent",
+            "description": "Whether scan history survives an API restart"
           }
         },
         "type": "object",
         "required": [
           "status",
-          "version"
+          "version",
+          "max_upload_mb",
+          "persistent"
         ],
         "title": "Health"
       },
@@ -1117,7 +1129,8 @@
           "findings",
           "score"
         ],
-        "title": "ScanSummary"
+        "title": "ScanSummary",
+        "description": "One row of scan history: enough to list scans without loading their findings."
       },
       "SourceType": {
         "type": "string",

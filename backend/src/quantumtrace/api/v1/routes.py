@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from pydantic import Field
 
 from quantumtrace import __version__
 from quantumtrace.api.deps import get_repository, require_api_key
@@ -14,7 +14,7 @@ from quantumtrace.api.uploads import materialise
 from quantumtrace.cbom.cyclonedx import to_cyclonedx
 from quantumtrace.core.classifier import Rule, default_classifier
 from quantumtrace.core.engine import run_scan
-from quantumtrace.core.models import Model, RiskScore, ScanResult
+from quantumtrace.core.models import Model, ScanResult, ScanSummary
 from quantumtrace.store.repository import ScanRepository
 
 public = APIRouter(tags=["meta"])
@@ -27,6 +27,8 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 class Health(Model):
     status: str
     version: str
+    max_upload_mb: int = Field(description="Largest total upload a scan accepts")
+    persistent: bool = Field(description="Whether scan history survives an API restart")
 
 
 class Sample(Model):
@@ -38,17 +40,14 @@ class SampleScanRequest(Model):
     sample: str
 
 
-class ScanSummary(Model):
-    id: str
-    created_at: datetime
-    targets: list[str]
-    findings: int
-    score: RiskScore
-
-
 @public.get("/health", operation_id="health")
-def health() -> Health:
-    return Health(status="ok", version=__version__)
+def health(settings: SettingsDep, repo: Repo) -> Health:
+    return Health(
+        status="ok",
+        version=__version__,
+        max_upload_mb=settings.max_upload_mb,
+        persistent=repo.persistent,
+    )
 
 
 @router.get("/rules", tags=["rules"], operation_id="listRules")
@@ -111,16 +110,7 @@ def _relativise(result: ScanResult, root: Path, prefix: str) -> None:
 
 @router.get("/scans", tags=["scans"], operation_id="listScans")
 def list_scans(repo: Repo, limit: int = 50) -> list[ScanSummary]:
-    return [
-        ScanSummary(
-            id=r.id,
-            created_at=r.created_at,
-            targets=r.targets,
-            findings=len(r.findings),
-            score=r.score,
-        )
-        for r in repo.list(limit)
-    ]
+    return repo.list(limit)
 
 
 @router.get("/scans/{scan_id}", tags=["scans"], operation_id="getScan")

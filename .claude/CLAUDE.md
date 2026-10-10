@@ -35,7 +35,7 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | `backend/src/quantumtrace/rules/` | `algorithms.yaml`, `aws_elb_policies.yaml`, `tls.py` (cipher-suite decomposition) |
 | `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers) |
 | `backend/src/quantumtrace/cbom/` | CycloneDX 1.6 export |
-| `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`, in-memory store |
+| `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`; scans in memory or Upstash Redis (`store/`) |
 | `backend/tests/` | golden tests against `samples/` for every vector |
 | `frontend/apps/web/` | React 19 + Vite + Tailwind v4 dashboard (deployed to Vercel) |
 | `frontend/packages/sdk/` | generated OpenAPI types + typed client |
@@ -131,14 +131,20 @@ cd backend && uv run quantumtrace scan ../samples/cloud-posture -f cbom -o out.c
 
 ## Deploy
 
-- **API → Fly.io.** `fly.toml` sits at the repo root, the image is `backend/Dockerfile` (built from
-  the repo root, with samples baked in). There is no deploy workflow yet: deploy manually with
-  `fly deploy` (see the `deploy` skill). Set Fly secrets `QT_API_KEY` and `QT_CORS_ORIGINS`.
-- **Web → Vercel** via its Git integration. Root directory is `frontend/apps/web` (see
-  `vercel.json`). Set the env var `VITE_API_URL=https://<fly-app>.fly.dev`. Anything in `VITE_*` is
-  public.
-- Storage is in-memory (`store/repository.py`). Fly machines auto-stop, so scans are ephemeral by
-  design. Swap the implementation behind `ScanRepository` if persistence is needed.
+Both halves run on Vercel as two projects from this repo (see the `deploy` skill):
+
+- **API → Vercel**, root directory `backend`. `backend/app.py` is the entrypoint and
+  `backend/vercel.json` configures the function. The deployed API never sees `samples/`
+  (it sits outside the root directory), so the web app is upload-only.
+- **Web → Vercel**, root directory `frontend/apps/web`. Set `VITE_API_URL` to the API project's
+  URL. Anything in `VITE_*` is public.
+- **Storage.** Serverless requests can land on different instances, so the API project needs
+  Upstash Redis (Vercel Marketplace). It injects `KV_REST_API_URL`/`KV_REST_API_TOKEN`, and
+  `store/repository.py` keeps scans for 7 days. Without them it falls back to process memory
+  (fine locally and in Docker).
+- **Upload cap.** Vercel rejects request bodies over 4.5 MB, so on Vercel `max_upload_mb`
+  defaults to 4. `/health` advertises it and the web app checks sizes before uploading. For
+  bigger captures, run locally or use the Docker image (`backend/Dockerfile`, `fly.toml`).
 
 ## Skills
 

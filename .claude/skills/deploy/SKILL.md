@@ -1,41 +1,49 @@
 ---
 name: deploy
-description: Deploy QuantumTrace — API to Fly.io (Docker) and web app to Vercel — configure secrets/env/CORS, and troubleshoot failed deploys or health checks.
+description: Deploy QuantumTrace — API and web app as two Vercel projects (Docker/Fly.io as the fallback for big uploads) — configure env vars, CORS and Redis storage, and troubleshoot failed deploys or health checks.
 ---
 
 # Deploy
 
-## API → Fly.io
-Files: `fly.toml` (repo root), `backend/Dockerfile` (built from the repo root, samples baked in),
-no deploy workflow yet (deploys are manual).
+Two Vercel projects from one repo. In the Vercel import screen, choose **Import single
+project** twice: once for `backend` (FastAPI) and once for `frontend/apps/web` (Vite).
 
-One-time setup (by a human with a Fly account):
-```sh
-fly launch --no-deploy --copy-config --name <app>      # then set `app` in fly.toml
-fly secrets set QT_API_KEY=<random> QT_CORS_ORIGINS=https://<project>.vercel.app
-fly deploy --remote-only                               # deploy (manual for now)
-```
-To automate later, add a workflow that runs `flyctl deploy --remote-only` with a
-`FLY_API_TOKEN` secret.
+## API → Vercel (root directory `backend`)
+Files: `backend/app.py` (entrypoint Vercel detects; adds `src/` to the path and imports
+`quantumtrace.api.app:app`), `backend/vercel.json` (60 s max duration, tests excluded from the
+bundle). Dependencies install from `pyproject.toml` + `uv.lock` on Python 3.12.
 
-- Health check: `GET /api/v1/health`. Machines auto-stop when idle, so the first request
-  cold-starts in about 2s. Fine for a demo.
-- Storage is in memory, so scans vanish on restart. That's expected.
-- Local parity: `make docker-build && docker run -p 8000:8000 quantumtrace-api`.
+1. Import with Root Directory = `backend`. Framework preset: FastAPI.
+2. **Storage → Upstash Redis** (Marketplace, free tier), connected to this project. It adds
+   `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Without it scans live in one instance's memory and
+   `GET /scans/{id}` can 404 when the next request lands on another instance.
+3. Env vars: `QT_CORS_ORIGINS=https://<web-project>.vercel.app`. For preview deploys also set
+   `QT_CORS_ORIGIN_REGEX=https://<web-project>-.*\.vercel\.app`. Optional `QT_API_KEY`.
+4. Check `https://<api-project>.vercel.app/api/v1/health`: expect `"persistent": true` and
+   `"max_upload_mb": 4`.
 
-## Web → Vercel
-Use Vercel's Git integration, so no workflow is needed:
-1. Import the repo and set **Root Directory** = `frontend/apps/web`. `vercel.json` sets the
-   framework, install from the monorepo root, `dist` output and SPA rewrites.
-2. Env var `VITE_API_URL=https://<app>.fly.dev`. Only set `VITE_API_KEY` to a throwaway demo key,
-   because it ships in the bundle.
-3. Preview deploys per PR come free. `fly.toml` already allows `https://.*\.vercel\.app` through
-   `QT_CORS_ORIGIN_REGEX`. Tighten it to your project prefix for production.
+Limits: request bodies over 4.5 MB never reach the function (Vercel answers 413 without CORS
+headers), so `max_upload_mb` defaults to 4 when `VERCEL` is set and the web app checks sizes
+first. `samples/` is outside the root directory, so `/samples` is empty and the web app is
+upload-only.
+
+## Web → Vercel (root directory `frontend/apps/web`)
+`vercel.json` sets the framework, install from the monorepo root, `dist` output and SPA rewrites.
+1. Import with Root Directory = `frontend/apps/web`.
+2. Env var `VITE_API_URL=https://<api-project>.vercel.app`. Only set `VITE_API_KEY` to a
+   throwaway demo key, because it ships in the bundle. Redeploy after changing `VITE_*`.
+
+## Fallback: Docker / Fly.io
+For uploads over 4 MB, `backend/Dockerfile` (built from the repo root, samples baked in) runs the
+API as one process with in-memory storage and a 50 MB cap. `fly.toml` is ready:
+`fly launch --no-deploy --copy-config --name <app>`, `fly secrets set QT_CORS_ORIGINS=...`,
+`fly deploy --remote-only`. Local parity: `make docker-build && docker run -p 8000:8000 quantumtrace-api`.
 
 ## Troubleshooting
 | Symptom | Check |
 | --- | --- |
-| Web shows "Scanner unreachable" | `VITE_API_URL` value; CORS (`fly logs` shows OPTIONS 400); API key mismatch → 401 |
-| Fly health check failing | `fly logs`; does `uv.lock` match `pyproject.toml` (`uv lock`)? |
-| Docker build fails at `uv sync --frozen` | run `cd backend && uv lock` and commit |
-| Vercel install fails | `pnpm-lock.yaml` committed? `packageManager` field in root `package.json` |
+| Web shows "Scanner unreachable" | `VITE_API_URL` (redeploy the web after changing it); CORS origins; API key mismatch → 401 |
+| Report opens then says not found | Redis not connected to the API project: `/health` shows `"persistent": false` |
+| Upload fails with a network error | Body over 4.5 MB; the web check needs `/health` to load first |
+| API build fails resolving deps | `cd backend && uv lock` and commit |
+| Vercel web install fails | `pnpm-lock.yaml` committed? `packageManager` field in root `package.json` |

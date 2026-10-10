@@ -171,3 +171,23 @@ class ScanResult(Model):
     score: RiskScore
     limitations: list[ScanNote] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+
+
+class ScanSummary(Model):
+    """One row of scan history: enough to list scans without loading their findings."""
+
+    id: str
+    created_at: datetime
+    targets: list[str]
+    findings: int
+    score: RiskScore
+
+    @classmethod
+    def of(cls, result: ScanResult) -> ScanSummary:
+        return cls(
+            id=result.id,
+            created_at=result.created_at,
+            targets=result.targets,
+            findings=len(result.findings),
+            score=result.score,
+        )

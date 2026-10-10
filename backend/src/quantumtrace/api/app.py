@@ -8,7 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from quantumtrace import __version__
 from quantumtrace.api.settings import Settings, get_settings
 from quantumtrace.api.v1.routes import public, router
-from quantumtrace.store.repository import InMemoryScanRepository
+from quantumtrace.store.repository import (
+    InMemoryScanRepository,
+    RedisScanRepository,
+    ScanRepository,
+)
 
 API_PREFIX = "/api/v1"
 
@@ -20,7 +24,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         description="Discover, classify and report quantum-vulnerable cryptography (CBOM).",
     )
-    app.state.repository = InMemoryScanRepository()
+    app.state.repository = make_repository(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -31,6 +35,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(public, prefix=API_PREFIX)
     app.include_router(router, prefix=API_PREFIX)
     return app
+
+
+def make_repository(settings: Settings) -> ScanRepository:
+    if settings.redis_url and settings.redis_token:
+        return RedisScanRepository(settings.redis_url, settings.redis_token)
+    return InMemoryScanRepository()
 
 
 app = create_app()

@@ -265,6 +265,16 @@ export interface components {
             status: string;
             /** Version */
             version: string;
+            /**
+             * Max Upload Mb
+             * @description Largest total upload a scan accepts
+             */
+            max_upload_mb: number;
+            /**
+             * Persistent
+             * @description Whether scan history survives an API restart
+             */
+            persistent: boolean;
         };
         /**
          * Observation
@@ -370,7 +380,10 @@ export interface components {
             /** Errors */
             errors: string[];
         };
-        /** ScanSummary */
+        /**
+         * ScanSummary
+         * @description One row of scan history: enough to list scans without loading their findings.
+         */
         ScanSummary: {
             /** Id */
             id: string;

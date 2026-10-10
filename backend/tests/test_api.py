@@ -24,7 +24,29 @@ def client(samples: Path) -> TestClient:
 
 
 def test_health(client: TestClient) -> None:
-    assert client.get("/api/v1/health").json()["status"] == "ok"
+    body = client.get("/api/v1/health").json()
+    assert body["status"] == "ok"
+    assert body["max_upload_mb"] == 50
+    assert body["persistent"] is False
+
+
+def test_upload_over_limit_413(samples: Path) -> None:
+    settings = Settings(samples_dir=samples, max_upload_mb=1)
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    res = TestClient(app).post(
+        "/api/v1/scans", files=[("files", ("big.bin", b"x" * (1024 * 1024 + 1), "text/plain"))]
+    )
+    assert res.status_code == 413
+    assert "1 MB limit" in res.json()["detail"]
+
+
+def test_redis_used_when_configured(samples: Path) -> None:
+    from quantumtrace.api.app import make_repository
+    from quantumtrace.store.repository import RedisScanRepository
+
+    settings = Settings(samples_dir=samples, redis_url="https://x.upstash.io", redis_token="t")
+    assert isinstance(make_repository(settings), RedisScanRepository)
 
 
 def test_samples_listed(client: TestClient) -> None:

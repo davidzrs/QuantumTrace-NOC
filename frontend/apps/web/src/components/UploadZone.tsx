@@ -1,12 +1,6 @@
 import { useId, useRef, useState } from "react";
 
-export function UploadZone({
-  onFiles,
-  disabled,
-}: {
-  onFiles: (files: File[]) => void;
-  disabled?: boolean;
-}) {
+export function UploadZone({ onFiles, busy }: { onFiles: (files: File[]) => void; busy?: boolean }) {
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const hintId = useId();
@@ -21,24 +15,30 @@ export function UploadZone({
       onDrop={(e) => {
         e.preventDefault();
         setDragging(false);
-        if (!disabled && e.dataTransfer.files.length) onFiles([...e.dataTransfer.files]);
+        if (!busy && e.dataTransfer.files.length) onFiles([...e.dataTransfer.files]);
       }}
-      className={`flex flex-col items-start gap-3 border border-dashed px-5 py-6 transition-colors sm:flex-row sm:items-center sm:justify-between ${
+      aria-busy={busy}
+      className={`grid justify-items-start gap-5 border border-dashed px-6 py-10 transition-colors sm:px-10 sm:py-14 ${
         dragging ? "border-ink bg-surface" : "border-rule-strong"
       }`}
     >
-      <p id={hintId} className="max-w-prose text-ink-muted">
-        Drop your own exports, code or captures here. Zip archives are unpacked; nothing is kept
-        after the scan.
-      </p>
+      <div className="grid gap-2">
+        <p className="text-lg font-semibold">
+          {busy ? "Scanning…" : dragging ? "Drop to scan" : "Drop files here, or choose them"}
+        </p>
+        <p id={hintId} className="max-w-[62ch] text-ink-muted">
+          AWS exports (KMS, ACM, load balancer policies), Python, Java and Go source, and .pcap
+          captures. Zip archives are unpacked. Nothing is kept except the report.
+        </p>
+      </div>
       <button
         type="button"
-        disabled={disabled}
+        disabled={busy}
         aria-describedby={hintId}
         onClick={() => input.current?.click()}
-        className="shrink-0 border border-ink px-4 py-2 font-semibold hover:bg-ink hover:text-ground disabled:opacity-50"
+        className="bg-ink px-4 py-2 font-semibold text-ground hover:opacity-90 disabled:opacity-50"
       >
-        Choose files
+        {busy ? "Scanning…" : "Choose files"}
       </button>
       <input
         ref={input}

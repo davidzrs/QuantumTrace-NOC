@@ -62,12 +62,14 @@ After changing the API, run `make gen-sdk`.
 
 ## Deploy
 
-- **API → Fly.io**: `fly.toml` plus `backend/Dockerfile`; deploy manually with `fly deploy`
-  (no deploy workflow yet).
-- **Web → Vercel**: import the repo with root directory `frontend/apps/web` and set
-  `VITE_API_URL`.
+Both the API and the web app deploy to Vercel as two projects from this repo:
 
-Details are in `.claude/skills/deploy/SKILL.md`.
+- **API**: root directory `backend`. Add Upstash Redis from the Vercel Marketplace so scans
+  persist across serverless instances, and set `QT_CORS_ORIGINS` to the web app's URL.
+- **Web**: root directory `frontend/apps/web`. Set `VITE_API_URL` to the API's URL.
+
+Uploads are capped at 4 MB on Vercel. `backend/Dockerfile` (with `fly.toml`) runs the same API
+as one long-lived process without that cap. Details are in `.claude/skills/deploy/SKILL.md`.
 
 ## Contributing
 
