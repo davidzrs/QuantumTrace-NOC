@@ -1,6 +1,7 @@
-// Builds the browser extension zips into public/extension/ so the web app can offer them for
-// download. The extension defaults to the same API as this web app, and to this web app for
-// full reports, so it works straight after "Load unpacked".
+// Builds the browser extension zips and the VS Code extension package into public/extension/ so
+// the web app can offer them for download. The browser extension defaults to the same API as
+// this web app, and to this web app for full reports, so it works straight after "Load
+// unpacked". The VS Code extension offers that same API on machines with no local scanner.
 import { execSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -8,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const web = dirname(dirname(fileURLToPath(import.meta.url)));
 const extension = join(web, "..", "..", "..", "extensions", "browser");
+const vscode = join(web, "..", "..", "..", "extensions", "vscode");
 const outDir = join(web, "public", "extension");
 
 // Vite reads .env files only after this script runs, so only real environment variables count.
@@ -30,4 +32,13 @@ for (const browser of ["chrome", "firefox"]) {
   if (!zip) throw new Error(`wxt zip produced no ${browser} zip in ${extension}/.output`);
   copyFileSync(join(extension, ".output", zip), join(outDir, `quantumtrace-${browser}.zip`));
 }
-console.log(`Extension zips written to ${outDir}`);
+
+const vsix = join(outDir, "quantumtrace-vscode.vsix");
+const vscodeEnv = { ...env, QT_API_URL: process.env.VITE_API_URL ?? "" };
+execSync("pnpm run build", { cwd: vscode, env: vscodeEnv, stdio: "inherit" });
+execSync(`pnpm exec vsce package --no-dependencies --skip-license --out "${vsix}"`, {
+  cwd: vscode,
+  env: vscodeEnv,
+  stdio: "inherit",
+});
+console.log(`Extension downloads written to ${outDir}`);

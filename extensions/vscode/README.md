@@ -21,13 +21,22 @@ It is a thin client. Every tier, rationale and replacement comes from the engine
   `underline` it also lists every finding in the Problems panel; VS Code only lists what is
   underlined, so the default `highlight` style has no such list.
 
+## Install
+
+Download `quantumtrace-vscode.vsix` from the QuantumTrace web app, then in VS Code open the
+Extensions view, pick **Install from VSIX…** in its `...` menu and choose the file.
+
+The extension runs the QuantumTrace CLI on your machine. If it finds none, it asks once whether
+it may scan through the API that web app uses, and names the address your files would go to.
+"Keep it local" is remembered too; change either answer with `quantumtrace.backend`.
+
 ## Settings
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `quantumtrace.backend` | `cli` | `cli` runs the local CLI, so code never leaves the machine. `api` uploads files through `@quantumtrace/sdk`. |
+| `quantumtrace.backend` | `auto` | `auto` runs the local CLI and, if none is installed, asks once before using the API. `cli` never uploads. `api` always uploads, through `@quantumtrace/sdk`. |
 | `quantumtrace.cli.command` | `["quantumtrace"]` | Command that starts the CLI, one item per argument. Use absolute paths. |
-| `quantumtrace.api.url` | empty | Base URL of the API, for example `http://localhost:8000`. Store a key with **QuantumTrace: Set API key**. |
+| `quantumtrace.api.url` | empty | Base URL of the API, for example `http://localhost:8000`. Empty uses the API the package was built for, if any. Store a key with **QuantumTrace: Set API key**. |
 | `quantumtrace.scanOnSave` | `true` | Scan on open and on save. Turn off to scan only on command. |
 | `quantumtrace.style` | `highlight` | `highlight` colours the whole line. `underline` underlines the call and fills the Problems panel. |
 | `quantumtrace.criticalSeverity` | `error` | Set to `warning` to show Shor-vulnerable code in yellow too. |

@@ -3,9 +3,18 @@ import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Finding } from "@quantumtrace/sdk";
+import { ApiConsent, originOf } from "./consent";
 import { dismissed, Dismissals, type DismissedRow } from "./dismissals";
 import { DismissedView, fileKey, uriOf } from "./dismissedView";
-import { apiEngine, cliEngine, type Engine, EngineError, type Scan } from "./engine";
+import {
+  apiEngine,
+  autoEngine,
+  cliEngine,
+  DEFAULT_API_URL,
+  type Engine,
+  EngineError,
+  type Scan,
+} from "./engine";
 import { commandLink, explanation, headline, label, type Tone } from "./explain";
 import {
   applyEdits,
@@ -35,6 +44,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const diagnostics = vscode.languages.createDiagnosticCollection("quantumtrace");
   const log = vscode.window.createOutputChannel("QuantumTrace");
   const dismissals = new Dismissals(context.workspaceState);
+  // per user, not per folder: it is about where this person's code may be sent
+  const consent = new ApiConsent(context.globalState);
+  /** Questions still open in this window, by API origin, so each is asked once. */
+  const asking = new Map<string, Promise<boolean>>();
   const dismissedView = new DismissedView(dismissals);
   const dismissedTree = vscode.window.createTreeView("quantumtrace.dismissed", {
     treeDataProvider: dismissedView,
@@ -134,16 +147,48 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   async function engine(): Promise<Engine> {
-    if (setting<string>("backend", "cli") !== "api") {
-      return cliEngine(setting("cli.command", ["quantumtrace"]));
-    }
-    const baseUrl = setting("api.url", "").trim();
-    if (!baseUrl) {
+    const backend = setting<string>("backend", "auto");
+    const cli = cliEngine(setting("cli.command", ["quantumtrace"]));
+    if (backend === "cli") return cli;
+
+    // the setting wins; a build downloaded from the web app falls back to that deployment's API
+    const baseUrl = setting("api.url", "").trim() || DEFAULT_API_URL;
+    const api = baseUrl
+      ? apiEngine({ baseUrl, apiKey: await context.secrets.get(API_KEY_SECRET) })
+      : undefined;
+    if (backend !== "api") return autoEngine(cli, api, () => mayUseApi(baseUrl));
+    if (!api) {
       throw new EngineError(
         "Set quantumtrace.api.url to the QuantumTrace API, or switch quantumtrace.backend to cli.",
       );
     }
-    return apiEngine({ baseUrl, apiKey: await context.secrets.get(API_KEY_SECRET) });
+    return api;
+  }
+
+  /** The answer the user gave for this API. Unanswered, it asks once per window: closing the
+   * question is not a yes, and is not remembered either. */
+  function mayUseApi(baseUrl: string): Promise<boolean> {
+    const answer = consent.answerFor(baseUrl);
+    if (answer !== undefined) return Promise.resolve(answer);
+    const origin = originOf(baseUrl);
+    let question = asking.get(origin);
+    if (!question) {
+      question = askToUseApi(baseUrl);
+      asking.set(origin, question);
+    }
+    return question;
+  }
+
+  async function askToUseApi(baseUrl: string): Promise<boolean> {
+    const choice = await vscode.window.showInformationMessage(
+      `QuantumTrace found no local scanner on this computer. Scan through the QuantumTrace API instead? The files you scan are sent to ${originOf(baseUrl)}.`,
+      "Use the API",
+      "Keep it local",
+    );
+    if (!choice) return false;
+    const granted = choice === "Use the API";
+    await consent.record(baseUrl, granted);
+    return granted;
   }
 
   function failed(error: unknown): void {
