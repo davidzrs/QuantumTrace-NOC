@@ -19,7 +19,8 @@ def result(samples: Path) -> ScanResult:
 
 
 def in_file(result: ScanResult, name: str) -> list[Finding]:
-    return [f for f in result.findings if f.asset.evidence.location.endswith(name)]
+    # the CLI reports native paths, so compare with forward slashes on every platform
+    return [f for f in result.findings if Path(f.asset.evidence.location).as_posix().endswith(name)]
 
 
 def tiers(findings: list[Finding]) -> set[tuple[str, str]]:

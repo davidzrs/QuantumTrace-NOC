@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from typing import Annotated, Any
@@ -137,11 +138,14 @@ def probe_tls(body: TlsProbeRequest, settings: SettingsDep, repo: Repo) -> ScanR
 
 
 def _relativise(result: ScanResult, root: Path, prefix: str) -> None:
-    """Never leak server filesystem paths: rewrite evidence relative to the scanned root."""
-    base = f"{root}/"
+    """Never leak server filesystem paths: rewrite evidence relative to the scanned root, with
+    forward slashes whatever the server's path separator is."""
+    base = f"{root}{os.sep}"
 
     def fix(value: str) -> str:
-        return prefix + value.removeprefix(base) if value.startswith(base) else value
+        if not value.startswith(base):
+            return value
+        return prefix + value.removeprefix(base).replace(os.sep, "/")
 
     for f in result.findings:
         for ev in f.asset.all_evidence:

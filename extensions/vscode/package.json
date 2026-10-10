@@ -1,0 +1,281 @@
+{
+  "name": "quantumtrace-vscode",
+  "displayName": "QuantumTrace",
+  "description": "Highlights quantum-vulnerable cryptography in Python, Java and Go, explains the risk and says what to migrate to.",
+  "version": "0.4.1",
+  "private": true,
+  "publisher": "quantumtrace",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ttlopes/QuantumTrace-NOC.git",
+    "directory": "extensions/vscode"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:java",
+    "onLanguage:go"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace QuantumTrace ignores workspace settings that choose which command to run or where to send code.",
+      "restrictedConfigurations": [
+        "quantumtrace.backend",
+        "quantumtrace.cli.command",
+        "quantumtrace.api.url"
+      ]
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "quantumtrace.scanFile",
+        "title": "Scan current file",
+        "category": "QuantumTrace"
+      },
+      {
+        "command": "quantumtrace.scanWorkspace",
+        "title": "Scan workspace",
+        "category": "QuantumTrace"
+      },
+      {
+        "command": "quantumtrace.restoreDismissed",
+        "title": "Restore dismissed warnings",
+        "category": "QuantumTrace",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "quantumtrace.restoreOne",
+        "title": "Restore this warning",
+        "category": "QuantumTrace",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "quantumtrace.revealDismissed",
+        "title": "Show dismissed warning in file",
+        "category": "QuantumTrace"
+      },
+      {
+        "command": "quantumtrace.setApiKey",
+        "title": "Set API key",
+        "category": "QuantumTrace"
+      },
+      {
+        "command": "quantumtrace.dismiss",
+        "title": "Dismiss warning",
+        "category": "QuantumTrace"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "quantumtrace.dismiss",
+          "when": "false"
+        },
+        {
+          "command": "quantumtrace.restoreOne",
+          "when": "false"
+        },
+        {
+          "command": "quantumtrace.revealDismissed",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "quantumtrace.restoreDismissed",
+          "when": "view == quantumtrace.dismissed",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "quantumtrace.restoreOne",
+          "when": "view == quantumtrace.dismissed && viewItem == dismissed",
+          "group": "inline"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "quantumtrace",
+          "title": "QuantumTrace",
+          "icon": "media/quantumtrace.svg"
+        }
+      ]
+    },
+    "views": {
+      "quantumtrace": [
+        {
+          "id": "quantumtrace.dismissed",
+          "name": "Dismissed warnings"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "quantumtrace.dismissed",
+        "contents": "No dismissed warnings.\nWhen you dismiss a warning it is kept here, so you can find it again and restore it."
+      }
+    ],
+    "colors": [
+      {
+        "id": "quantumtrace.criticalForeground",
+        "description": "Icon and label colour for Shor-vulnerable (critical) findings.",
+        "defaults": {
+          "dark": "#f0577f",
+          "light": "#b3123f",
+          "highContrast": "#f0577f",
+          "highContrastLight": "#b3123f"
+        }
+      },
+      {
+        "id": "quantumtrace.mediumForeground",
+        "description": "Icon and label colour for Grover-weakened (medium) findings.",
+        "defaults": {
+          "dark": "#e0a83c",
+          "light": "#9a6a12",
+          "highContrast": "#e0a83c",
+          "highContrastLight": "#9a6a12"
+        }
+      },
+      {
+        "id": "quantumtrace.unknownForeground",
+        "description": "Icon and label colour for algorithms QuantumTrace has no rule for.",
+        "defaults": {
+          "dark": "#9aa5b2",
+          "light": "#6b7685",
+          "highContrast": "#9aa5b2",
+          "highContrastLight": "#6b7685"
+        }
+      },
+      {
+        "id": "quantumtrace.criticalLineBackground",
+        "description": "Background of lines with Shor-vulnerable (critical) findings.",
+        "defaults": {
+          "dark": "#f0577f33",
+          "light": "#b3123f33",
+          "highContrast": "#f0577f55",
+          "highContrastLight": "#b3123f40"
+        }
+      },
+      {
+        "id": "quantumtrace.mediumLineBackground",
+        "description": "Background of lines with Grover-weakened (medium) findings.",
+        "defaults": {
+          "dark": "#e0a83c33",
+          "light": "#9a6a1233",
+          "highContrast": "#e0a83c55",
+          "highContrastLight": "#9a6a1240"
+        }
+      },
+      {
+        "id": "quantumtrace.unknownLineBackground",
+        "description": "Background of lines with algorithms QuantumTrace has no rule for.",
+        "defaults": {
+          "dark": "#9aa5b233",
+          "light": "#6b768533",
+          "highContrast": "#9aa5b255",
+          "highContrastLight": "#6b768540"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "QuantumTrace",
+      "properties": {
+        "quantumtrace.backend": {
+          "type": "string",
+          "enum": [
+            "cli",
+            "api"
+          ],
+          "enumDescriptions": [
+            "Run the local QuantumTrace CLI. Code never leaves this machine.",
+            "Upload files to a QuantumTrace API."
+          ],
+          "default": "cli",
+          "description": "How the extension reaches the QuantumTrace engine."
+        },
+        "quantumtrace.cli.command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "quantumtrace"
+          ],
+          "markdownDescription": "Command that starts the QuantumTrace CLI, one item per argument. Use absolute paths, for example `[\"uv\", \"run\", \"--project\", \"/path/to/backend\", \"quantumtrace\"]`."
+        },
+        "quantumtrace.api.url": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Base URL of the QuantumTrace API, for example `http://localhost:8000`. Used when `#quantumtrace.backend#` is `api`."
+        },
+        "quantumtrace.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scan Python, Java and Go files when they are opened or saved."
+        },
+        "quantumtrace.style": {
+          "type": "string",
+          "enum": [
+            "highlight",
+            "underline"
+          ],
+          "enumDescriptions": [
+            "Colour the whole line.",
+            "Underline the call, and list every finding in the Problems panel."
+          ],
+          "default": "highlight",
+          "description": "How findings are marked in the editor."
+        },
+        "quantumtrace.criticalSeverity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning"
+          ],
+          "enumDescriptions": [
+            "Red, so Shor-vulnerable code stands apart from Grover-weakened code.",
+            "Yellow, the same as Grover-weakened code."
+          ],
+          "default": "error",
+          "description": "Colour of Shor-vulnerable (critical) findings. Grover-weakened (medium) findings are always yellow."
+        },
+        "quantumtrace.explainOnClick": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the explanation when you click a marked finding."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node20 --external:vscode --sourcemap --outfile=dist/extension.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "package": "pnpm build && vsce package --no-dependencies --skip-license"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.34.0",
+    "@quantumtrace/sdk": "workspace:*",
+    "@types/node": "^22.18.0",
+    "@types/vscode": "1.95.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.0",
+    "eslint": "^9.34.0",
+    "globals": "^16.3.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.41.0",
+    "vitest": "^3.2.4"
+  }
+}

@@ -56,7 +56,7 @@ frontend/  pnpm workspace
   packages/ui         TierBadge, DebtStrip, design tokens (shared with extensions)
 extensions/
   browser             Chrome/Firefox popup (WXT): is the site in this tab quantum-ready?
-  vscode              planned; contract in its README
+  vscode              VS Code extension: highlights code findings in the editor, via the CLI or the API
 samples/   organiser data (cloud posture JSON, Python/Java/Go repos, network.pcap)
 ```
 

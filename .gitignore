@@ -16,6 +16,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .vite/
+*.vsix
 
 # Env
 .env

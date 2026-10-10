@@ -1,0 +1,6 @@
+src/**
+node_modules/**
+dist/**/*.map
+.vscodeignore
+eslint.config.mjs
+tsconfig.json

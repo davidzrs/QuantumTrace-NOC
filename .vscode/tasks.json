@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build QuantumTrace extension",
+      "type": "shell",
+      "command": "pnpm -F quantumtrace-vscode build",
+      "problemMatcher": []
+    }
+  ]
+}

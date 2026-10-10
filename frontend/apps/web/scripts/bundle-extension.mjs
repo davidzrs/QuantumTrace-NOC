@@ -1,7 +1,7 @@
 // Builds the browser extension zips into public/extension/ so the web app can offer them for
 // download. The extension defaults to the same API as this web app, and to this web app for
 // full reports, so it works straight after "Load unpacked".
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,8 @@ const webUrl =
 if (webUrl) env.WXT_WEB_URL = webUrl;
 
 for (const browser of ["chrome", "firefox"]) {
-  execFileSync("pnpm", ["exec", "wxt", "zip", "-b", browser], { cwd: extension, env, stdio: "inherit" });
+  // through the shell: on Windows pnpm is pnpm.cmd, which cannot be spawned directly
+  execSync(`pnpm exec wxt zip -b ${browser}`, { cwd: extension, env, stdio: "inherit" });
 }
 
 mkdirSync(outDir, { recursive: true });

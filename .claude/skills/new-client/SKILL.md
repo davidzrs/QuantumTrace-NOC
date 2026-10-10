@@ -5,8 +5,7 @@ description: Build a new QuantumTrace client surface — VS Code extension, Chro
 
 # Add a client surface
 
-Placeholders with contracts live in `extensions/vscode/` and
-`extensions/browser/`.
+The existing clients live in `extensions/vscode/` and `extensions/browser/`.
 
 ## Non-negotiables
 - **No classification in clients.** Tiers, replacements and scores come from the engine via the
