@@ -130,6 +130,26 @@ export function Home() {
           </div>
         </section>
 
+        <section aria-labelledby="editor-title" className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-5 rounded-xl border border-rule bg-surface p-5 sm:px-7 sm:py-6 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-center">
+          <div className="grid gap-2">
+            <h2 id="editor-title" className="font-display text-[19px] font-bold tracking-[-0.01em]">
+              Catch it as you write
+            </h2>
+            <p className="max-w-[68ch] text-ink-muted">
+              The VS Code extension highlights the lines of Python, Java and Go that a quantum
+              computer breaks or weakens, and says what to switch to. Open the Extensions view, pick
+              “Install from VSIX…” in its <span className="font-mono text-sm text-ink">...</span> menu
+              and choose the file. It runs the QuantumTrace CLI on your machine; without one, it asks
+              before sending any file to this scanner.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <a href="/extension/quantumtrace-vscode.vsix" download className="btn btn-primary">
+              Download for VS Code
+            </a>
+          </div>
+        </section>
+
         <section aria-labelledby="history-title" id="history" className="grid scroll-mt-16 grid-cols-[minmax(0,1fr)] gap-4">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h2 id="history-title" className="font-display text-[22px] font-bold tracking-[-0.02em]">
