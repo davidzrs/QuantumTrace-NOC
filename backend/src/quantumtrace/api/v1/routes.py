@@ -89,10 +89,19 @@ async def scan_upload(
     with tempfile.TemporaryDirectory(prefix="qt-") as tmp:
         dest = Path(tmp)
         await materialise(files, dest, settings.max_upload_mb * 1024 * 1024)
-        result = run_scan([dest], display_targets=[f.filename or "upload" for f in files])
+        result = run_scan([dest], display_targets=upload_targets(files))
         _relativise(result, dest, "")
     repo.save(result)
     return result
+
+
+def upload_targets(files: list[UploadFile]) -> list[str]:
+    """What the user picked: loose files by name, a folder upload once as `folder/`."""
+    targets: dict[str, None] = {}
+    for f in files:
+        top, sep, _ = (f.filename or "upload").replace("\\", "/").lstrip("/").partition("/")
+        targets[top + sep] = None
+    return list(targets)
 
 
 def _relativise(result: ScanResult, root: Path, prefix: str) -> None:

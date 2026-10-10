@@ -1,13 +1,19 @@
 import type { ScanResult } from "@quantumtrace/sdk";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { UploadZone } from "../components/UploadZone";
+import { ScanBench } from "../components/ScanBench";
 import { api } from "../lib/api";
 import { formatDate } from "../lib/format";
 import { forget, readHistory, remember, writeHistory } from "../lib/history";
 
-const MB = 1024 * 1024;
+const READS = [
+  { what: "Code", detail: "Library calls, key sizes, modes, hand-rolled primitives", files: ".py .java .go" },
+  { what: "Cloud", detail: "AWS KMS keys, ACM certificates, load balancer TLS policies", files: ".json" },
+  { what: "Network", detail: "TLS and SSH handshakes, including hybrid ML‑KEM", files: ".pcap .pcapng" },
+];
+
+const sampleLabel = (name: string) =>
+  name === "all" ? "All of them" : name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, " ");
 
 export function Home() {
   const navigate = useNavigate();
@@ -24,17 +30,19 @@ export function Home() {
     },
   });
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0 });
-  const [tooLarge, setTooLarge] = useState<string | null>(null);
+  // The deployed API has no samples (they sit outside its root), so this is often empty.
+  const samples = useQuery({ queryKey: ["samples"], queryFn: api.samples, retry: 0 });
 
-  const uploadScan = useMutation({
-    mutationFn: api.scanFiles,
-    onSuccess: (result: ScanResult) => {
-      remember(result.id);
-      queryClient.setQueryData(["scan", result.id], result);
-      void queryClient.invalidateQueries({ queryKey: ["scans"] });
-      void navigate(`/scans/${result.id}`);
-    },
-  });
+  const onScanned = (result: ScanResult) => {
+    remember(result.id);
+    queryClient.setQueryData(["scan", result.id], result);
+    void queryClient.invalidateQueries({ queryKey: ["scans"] });
+    void navigate(`/scans/${result.id}`);
+  };
+  const uploadScan = useMutation({ mutationFn: api.scanFiles, onSuccess: onScanned });
+  const sampleScan = useMutation({ mutationFn: api.scanSample, onSuccess: onScanned });
+  const scanning = uploadScan.isPending || sampleScan.isPending;
+  const scanError = uploadScan.error ?? sampleScan.error;
 
   const deleteScans = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -60,54 +68,63 @@ export function Home() {
     }
   };
 
-  // Check the size here: a host that rejects the body before the API sees it (Vercel caps
-  // requests at 4.5 MB) answers without CORS headers, which the browser reports as a network error.
-  const onFiles = (files: File[]) => {
-    const limit = health.data?.max_upload_mb;
-    const total = files.reduce((n, f) => n + f.size, 0);
-    if (limit && total > limit * MB) {
-      setTooLarge(
-        `These files add up to ${(total / MB).toFixed(1)} MB and this scanner takes up to ${limit} MB per scan. Zip them or scan fewer at a time.`,
-      );
-      return;
-    }
-    setTooLarge(null);
-    uploadScan.mutate(files);
-  };
-
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-16">
-      <section className="max-w-3xl">
-        <h1 className="text-4xl leading-[1.08] font-extrabold tracking-[-0.025em] text-balance sm:text-6xl">
-          Find the cryptography a quantum computer will break.
-        </h1>
-        <p className="mt-5 max-w-[62ch] text-lg leading-relaxed text-ink-muted">
-          QuantumTrace inventories every algorithm in your cloud exports, code and packet captures,
-          ranks each one by quantum risk, and maps it to its NIST post-quantum replacement. The
-          result exports as a CycloneDX&nbsp;1.6 CBOM.
-        </p>
+      <section className="grid gap-x-16 gap-y-10 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] lg:items-end">
+        <div>
+          <h1 className="max-w-[16ch] text-[2.6rem] leading-[1.03] font-extrabold tracking-[-0.03em] text-balance sm:text-[3.9rem]">
+            Find the cryptography a quantum computer will break.
+          </h1>
+          <p className="mt-6 max-w-[56ch] text-lg leading-relaxed text-ink-muted">
+            Point QuantumTrace at a codebase, cloud exports or a packet capture. It inventories
+            every algorithm, ranks each by quantum risk, and maps it to its NIST post-quantum
+            replacement, exportable as a CycloneDX&nbsp;1.6 CBOM.
+          </p>
+        </div>
+        <dl className="grid grid-cols-[minmax(0,1fr)] border-t border-ink text-sm">
+          {READS.map((r) => (
+            <div key={r.what} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-4 border-b border-rule py-3">
+              <dt className="font-semibold">{r.what}</dt>
+              <dd className="text-ink-muted">
+                {r.detail}
+                <span className="mt-0.5 block font-mono text-xs text-ink-faint">{r.files}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       <section aria-labelledby="scan" className="grid grid-cols-[minmax(0,1fr)] gap-4">
-        <h2 id="scan" className="text-xl font-bold">
-          Scan your files
+        <h2 id="scan" className="text-2xl font-bold tracking-tight">
+          Run a scan
         </h2>
-        <UploadZone busy={uploadScan.isPending} onFiles={onFiles} />
-        {tooLarge && (
+        <ScanBench limitMb={health.data?.max_upload_mb} busy={scanning} onScan={(items) => uploadScan.mutate(items)} />
+        {scanError && (
           <p role="alert" className="text-critical">
-            {tooLarge}
+            The scan didn’t run: {scanError.message}. Check that the scanner is online and try again.
           </p>
         )}
-        {uploadScan.error && (
-          <p role="alert" className="text-critical">
-            The scan didn’t run: {uploadScan.error.message}. Check that the scanner is online and try again.
-          </p>
+        {!!samples.data?.length && (
+          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
+            <p className="text-ink-muted">No files to hand? Scan a sample:</p>
+            {[...samples.data.map((s) => s.name), "all"].map((name) => (
+              <button
+                key={name}
+                type="button"
+                disabled={scanning}
+                onClick={() => sampleScan.mutate(name)}
+                className="font-semibold underline decoration-rule-strong underline-offset-4 hover:decoration-ink disabled:opacity-50"
+              >
+                {sampleScan.isPending && sampleScan.variables === name ? "Scanning…" : sampleLabel(name)}
+              </button>
+            ))}
+          </div>
         )}
       </section>
 
       <section aria-labelledby="history" className="grid grid-cols-[minmax(0,1fr)] gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h2 id="history" className="text-xl font-bold">
+          <h2 id="history" className="text-2xl font-bold tracking-tight">
             Your scans
           </h2>
           {!!scans.data?.length && (

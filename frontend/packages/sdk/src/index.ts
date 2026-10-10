@@ -21,6 +21,12 @@ export type ScanNote = Schemas["ScanNote"];
 export type Observation = Schemas["Observation"];
 export type Confidence = Schemas["Confidence"];
 
+/** A file and its path inside the folder it came from. */
+export interface UploadItem {
+  file: File;
+  path: string;
+}
+
 export interface ClientOptions {
   baseUrl: string;
   apiKey?: string;
@@ -80,10 +86,17 @@ export function createClient({ baseUrl, apiKey, fetch: fetchImpl }: ClientOption
       ),
     scanSample: (sample: string) =>
       unwrap(http.POST("/api/v1/scans/sample", { body: { sample } })),
-    /** Upload files or .zip archives. Uses raw fetch because of multipart bodies. */
-    scanFiles: async (files: File[]): Promise<ScanResult> => {
+    /**
+     * Upload files, folders or .zip archives. Pass `{ file, path }` to keep a file's place in a
+     * folder (`repo/src/auth.py`): evidence then points at that path. The API takes at most
+     * 1000 files per scan. Uses raw fetch because of multipart bodies.
+     */
+    scanFiles: async (files: Array<File | UploadItem>): Promise<ScanResult> => {
       const form = new FormData();
-      for (const f of files) form.append("files", f, f.name);
+      for (const f of files) {
+        if (f instanceof File) form.append("files", f, f.name);
+        else form.append("files", f.file, f.path);
+      }
       const res = await (fetchImpl ?? fetch)(`${baseUrl.replace(/\/$/, "")}/api/v1/scans`, {
         method: "POST",
         body: form,

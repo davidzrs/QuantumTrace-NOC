@@ -99,6 +99,37 @@ def test_upload_zip(client: TestClient, samples: Path) -> None:
     assert locations == {"posture/cloud/kms_key_inventory.json"}
 
 
+def test_upload_folder_keeps_paths(client: TestClient, samples: Path) -> None:
+    # A browser folder upload names each file by its path inside the chosen folder.
+    repo = samples / "sample-repos"
+    paths = ["python/legacy_accounts.py", "java/SessionCipher.java", "go/go.mod"]
+    res = client.post(
+        "/api/v1/scans",
+        files=[("files", (f"sample-repos/{p}", (repo / p).read_bytes())) for p in paths],
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["targets"] == ["sample-repos/"]
+    locations = {f["asset"]["evidence"]["location"] for f in body["findings"]}
+    assert locations == {
+        "sample-repos/python/legacy_accounts.py",
+        "sample-repos/java/SessionCipher.java",
+    }
+
+
+def test_upload_targets_list_loose_files_and_folders(client: TestClient, samples: Path) -> None:
+    kms = (samples / "cloud-posture/kms_key_inventory.json").read_bytes()
+    res = client.post(
+        "/api/v1/scans",
+        files=[
+            ("files", ("kms.json", kms)),
+            ("files", ("app/a/kms.json", kms)),
+            ("files", ("app/b/kms.json", kms)),
+        ],
+    )
+    assert res.json()["targets"] == ["kms.json", "app/"]
+
+
 def test_zip_slip_rejected_safely(client: TestClient) -> None:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:

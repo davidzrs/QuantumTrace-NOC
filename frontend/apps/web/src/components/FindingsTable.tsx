@@ -43,12 +43,15 @@ export function FindingsTable({
   findings,
   tier,
   onTierChange,
+  query,
+  onQueryChange: setQuery,
 }: {
   findings: Finding[];
   tier: RiskTier | undefined;
   onTierChange: (tier: RiskTier | undefined) => void;
+  query: string;
+  onQueryChange: (query: string) => void;
 }) {
-  const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [source, setSource] = useState<SourceId | undefined>();
   const [limit, setLimit] = useState(PAGE);
@@ -151,7 +154,7 @@ export function FindingsTable({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Algorithm, key alias, ARN, flag"
+            placeholder="Algorithm, file, key alias, ARN, flag"
             className="w-full bg-transparent py-1.5 outline-none placeholder:text-ink-faint"
           />
         </label>
