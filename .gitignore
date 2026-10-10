@@ -29,3 +29,8 @@ dist/
 # Local scan outputs
 *.cdx.json
 reports/
+
+# Browser extension (WXT)
+.output/
+.wxt/
+web-ext.config.ts

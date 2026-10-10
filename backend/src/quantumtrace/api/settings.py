@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     cors_origin_regex: str | None = None  # e.g. https://quantumtrace-.*\.vercel\.app
     samples_dir: Path = _REPO_SAMPLES
     max_upload_mb: int = 4 if _ON_VERCEL else 50
+    # Let /probes/tls reach private and loopback addresses and any port. Only for a local API:
+    # on a shared deployment it lets callers probe the server's own network (SSRF).
+    probe_private: bool = False
     # Upstash Redis REST credentials. The Vercel Marketplace integration sets KV_REST_API_*;
     # without them scans live in process memory.
     redis_url: str | None = Field(

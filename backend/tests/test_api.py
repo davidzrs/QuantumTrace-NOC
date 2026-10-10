@@ -143,3 +143,40 @@ def test_api_key_enforced_when_configured(samples: Path) -> None:
     assert client.get("/api/v1/health").status_code == 200
     assert client.get("/api/v1/rules").status_code == 401
     assert client.get("/api/v1/rules", headers={"X-API-Key": "s3cret"}).status_code == 200
+
+
+def test_probe_refuses_private_hosts(client: TestClient) -> None:
+    res = client.post("/api/v1/probes/tls", json={"host": "127.0.0.1"})
+    assert res.status_code == 400
+    assert "private" in res.json()["detail"]
+
+
+def test_probe_rejects_bad_port(client: TestClient) -> None:
+    res = client.post("/api/v1/probes/tls", json={"host": "example.com", "port": 70000})
+    assert res.status_code == 422
+
+
+def test_probe_needs_api_key_when_configured(samples: Path) -> None:
+    client = make_client(samples, api_key="s3cret")
+    assert client.post("/api/v1/probes/tls", json={"host": "example.com"}).status_code == 401
+
+
+def test_probe_saves_scan(samples: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from quantumtrace.api.v1 import routes
+    from quantumtrace.core.models import RiskScore, ScanResult, TierCounts
+
+    seen: dict[str, object] = {}
+
+    def fake_probe(host: str, port: int, *, allow_private: bool) -> ScanResult:
+        seen.update(host=host, port=port, allow_private=allow_private)
+        score = RiskScore(value=0, grade="A", counts=TierCounts())
+        return ScanResult(
+            targets=[f"{host}:{port}"], scanners=["tls-probe"], findings=[], score=score
+        )
+
+    monkeypatch.setattr(routes, "run_probe", fake_probe)
+    client = make_client(samples)
+    res = client.post("/api/v1/probes/tls", json={"host": "example.com"})
+    assert res.status_code == 200
+    assert seen == {"host": "example.com", "port": 443, "allow_private": False}
+    assert client.get(f"/api/v1/scans/{res.json()['id']}").status_code == 200

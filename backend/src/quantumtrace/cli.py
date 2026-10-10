@@ -1,4 +1,5 @@
-"""Command-line adapter: `quantumtrace scan <paths> --format table|json|cbom`."""
+"""Command-line adapter: `quantumtrace scan <paths>` and `quantumtrace probe <host>`,
+`--format table|json|cbom`."""
 
 from __future__ import annotations
 
@@ -12,8 +13,9 @@ from rich.console import Console
 from rich.table import Table
 
 from quantumtrace.cbom.cyclonedx import to_cyclonedx
-from quantumtrace.core.engine import run_scan
-from quantumtrace.core.models import RiskTier
+from quantumtrace.core.engine import run_probe, run_scan
+from quantumtrace.core.models import RiskTier, ScanResult
+from quantumtrace.scanners.network.probe import ProbeError
 
 app = typer.Typer(help="QuantumTrace: post-quantum readiness scanner", no_args_is_help=True)
 console = Console()
@@ -47,8 +49,31 @@ def scan(
     ] = None,
 ) -> None:
     """Scan files/directories and report quantum-vulnerable cryptography."""
-    result = run_scan(paths)
+    _report(run_scan(paths), fmt, output, fail_on)
 
+
+@app.command()
+def probe(
+    host: Annotated[str, typer.Argument(help="Host name, e.g. example.com")],
+    port: Annotated[int, typer.Option("--port", "-p")] = 443,
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.TABLE,
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    fail_on: Annotated[
+        RiskTier | None, typer.Option(help="Exit 1 if any finding has this tier (for CI)")
+    ] = None,
+) -> None:
+    """Handshake with a live TLS host and report what it negotiates and permits."""
+    try:
+        result = run_probe(host, port, allow_private=True)  # local CLI: the user's own network
+    except ProbeError as exc:
+        console.print(f"[red]error[/] {exc}")
+        raise typer.Exit(code=2) from exc
+    _report(result, fmt, output, fail_on)
+
+
+def _report(
+    result: ScanResult, fmt: OutputFormat, output: Path | None, fail_on: RiskTier | None
+) -> None:
     if fmt is OutputFormat.TABLE:
         table = Table(title=f"QuantumTrace: {len(result.findings)} findings")
         for col in ("Tier", "Algorithm", "Observed", "Usage", "Exposure", "Location"):

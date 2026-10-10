@@ -33,14 +33,15 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | --- | --- |
 | `backend/src/quantumtrace/core/` | models, classifier, scoring, engine |
 | `backend/src/quantumtrace/rules/` | `algorithms.yaml`, `aws_elb_policies.yaml`, `tls.py` (cipher-suite decomposition) |
-| `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers) |
+| `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe) |
 | `backend/src/quantumtrace/cbom/` | CycloneDX 1.6 export |
 | `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`; scans in memory or Upstash Redis (`store/`) |
 | `backend/tests/` | golden tests against `samples/` for every vector |
 | `frontend/apps/web/` | React 19 + Vite + Tailwind v4 dashboard (deployed to Vercel) |
 | `frontend/packages/sdk/` | generated OpenAPI types + typed client |
 | `frontend/packages/ui/` | `TierBadge`, `DebtStrip`, design tokens, shared with extension popups |
-| `frontend/apps/{vscode,browser}-extension/` | placeholders with the integration contract |
+| `frontend/apps/browser-extension/` | WXT popup (Chrome MV3 + Firefox) over `POST /api/v1/probes/tls` |
+| `frontend/apps/vscode-extension/` | placeholder with the integration contract |
 | `samples/` | organiser data (READMEs in Portuguese). Read-only: never edit to make a test pass |
 
 ## Commands

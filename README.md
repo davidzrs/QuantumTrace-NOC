@@ -29,6 +29,7 @@ cd backend
 uv run quantumtrace scan ../samples/cloud-posture                      # table
 uv run quantumtrace scan ../samples -f cbom -o quantumtrace.cdx.json   # CycloneDX 1.6
 uv run quantumtrace scan ./my-repo --fail-on critical                  # CI gate
+uv run quantumtrace probe github.com                                   # live TLS handshake
 ```
 
 ## Status
@@ -38,7 +39,7 @@ uv run quantumtrace scan ./my-repo --fail-on critical                  # CI gate
 | Cloud posture (AWS KMS, ACM, ELB TLS policies) | working: 69 findings on `samples/cloud-posture` |
 | Source code (Python, Java, Go) | working: 39 findings with file:line evidence, misuse flags (ECB, hard-coded keys, weak RNG, hand-rolled KDF) |
 | Network capture (TLS on any port incl. STARTTLS, SSH, cleartext) | working: 473 findings over 135 sessions, hybrid ML-KEM detected |
-| Live TLS probing | planned (needed by the browser extension) |
+| Live TLS probing (`quantumtrace probe <host>`, `POST /api/v1/probes/tls`) | working: negotiated version, group (hybrid ML-KEM or classical), cipher, TLS 1.2 downgrade path, leaf certificate key |
 
 ## Architecture
 
@@ -53,7 +54,8 @@ frontend/  pnpm workspace
   apps/web            React + Vite + Tailwind dashboard (Vercel)
   packages/sdk        typed client generated from the OpenAPI spec
   packages/ui         TierBadge, DebtStrip, design tokens (shared with extensions)
-  apps/vscode-extension, apps/browser-extension   planned; contracts in their READMEs
+  apps/browser-extension   Chrome/Firefox popup (WXT): is the site in this tab quantum-ready?
+  apps/vscode-extension    planned; contract in its README
 samples/   organiser data (cloud posture JSON, Python/Java/Go repos, network.pcap)
 ```
 

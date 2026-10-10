@@ -90,6 +90,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/probes/tls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Probe Tls
+         * @description Handshake with a live host and classify what it negotiates: TLS version, key exchange
+         *     (classical or hybrid ML-KEM), cipher, what it still permits over TLS 1.2, and the leaf
+         *     certificate key. Public addresses only, unless the API runs with QT_PROBE_PRIVATE.
+         */
+        post: operations["probeTls"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans/{scan_id}": {
         parameters: {
             query?: never;
@@ -430,6 +452,19 @@ export interface components {
              */
             unknown: number;
         };
+        /** TlsProbeRequest */
+        TlsProbeRequest: {
+            /**
+             * Host
+             * @description Host name or IP, e.g. example.com
+             */
+            host: string;
+            /**
+             * Port
+             * @default 443
+             */
+            port: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -615,6 +650,41 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_scanUpload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    probeTls: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TlsProbeRequest"];
             };
         };
         responses: {

@@ -64,7 +64,7 @@ class PcapScanner:
     def scan(self, paths: Sequence[Path]) -> Iterable[CryptoAsset | ScanNote]:
         for path in paths:
             stats = CaptureStats()
-            tally = _Tally()
+            tally = Tally()
             flows = list(read_flows(path, stats))  # reads the whole capture: DNS names known
             assets = (a for f in flows for a in _flow_assets(f, path, tally, stats.dns_names))
             yield from group_by_server(assets)
@@ -72,14 +72,14 @@ class PcapScanner:
 
 
 @dataclass
-class _Tally:
+class Tally:
     tls13: int = 0
     tls12_without_certificate: int = 0
     unparsed: int = 0
     midstream: list[str] = field(default_factory=list)  # server endpoints
 
 
-def _notes(scanner: str, path: Path, stats: CaptureStats, t: _Tally) -> Iterator[ScanNote]:
+def _notes(scanner: str, path: Path, stats: CaptureStats, t: Tally) -> Iterator[ScanNote]:
     name = path.name
     if t.tls13:
         yield ScanNote(scanner=scanner, message=(
@@ -150,7 +150,7 @@ def group_by_server(assets: Iterable[CryptoAsset]) -> list[CryptoAsset]:
 
 
 def _flow_assets(
-    flow: Flow, path: Path, tally: _Tally, dns_names: dict[str, str] | None = None
+    flow: Flow, path: Path, tally: Tally, dns_names: dict[str, str] | None = None
 ) -> Iterator[CryptoAsset]:
     (s_ip, s_port), (c_ip, c_port) = flow.server, flow.client
     cs, ss = flow.client_stream, flow.server_stream
@@ -173,12 +173,12 @@ def _flow_assets(
         location=f"{c_ip}:{c_port} -> {s_ip}:{s_port}",
         context=context,
     )
-    exposure = _exposure(s_ip)
+    exposure = exposure_of(s_ip)
 
     if ssh.banner(cs) or ssh.banner(ss):
         yield from _ssh_assets(cs, ss, exposure, evidence)
     elif tls.find_tls_start(cs) >= 0:
-        yield from _tls_assets(cs, ss, exposure, evidence, tally)
+        yield from tls_assets(cs, ss, exposure, evidence, tally)
     elif cs.startswith(CLEARTEXT_PREFIXES) or ss.startswith(CLEARTEXT_PREFIXES):
         first_line = (cs or ss).split(b"\r\n", 1)[0][:80].decode(errors="replace")
         ctx = {**evidence.context, "request": first_line}
@@ -206,8 +206,8 @@ def _is_tls_midstream(cs: bytes, ss: bytes) -> bool:
     return tls_record(cs) or tls_record(ss) or (0 < len(cs) <= 1 and len(ss) <= 1)
 
 
-def _tls_assets(
-    cs: bytes, ss: bytes, exposure: Exposure, evidence: Evidence, tally: _Tally
+def tls_assets(
+    cs: bytes, ss: bytes, exposure: Exposure, evidence: Evidence, tally: Tally
 ) -> Iterator[CryptoAsset]:
     client_msgs = tls.handshake_messages(cs)
     server_msgs = tls.handshake_messages(ss)
@@ -369,7 +369,7 @@ def _ssh_assets(
                             observation=Observation.PERMITTED)  # fmt: skip
 
 
-def _exposure(ip: str) -> Exposure:
+def exposure_of(ip: str) -> Exposure:
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:

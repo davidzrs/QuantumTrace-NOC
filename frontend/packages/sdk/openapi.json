@@ -317,6 +317,66 @@
         }
       }
     },
+    "/api/v1/probes/tls": {
+      "post": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "Probe Tls",
+        "description": "Handshake with a live host and classify what it negotiates: TLS version, key exchange\n(classical or hybrid ML-KEM), cipher, what it still permits over TLS 1.2, and the leaf\ncertificate key. Public addresses only, unless the API runs with QT_PROBE_PRIVATE.",
+        "operationId": "probeTls",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TlsProbeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans/{scan_id}": {
       "get": {
         "tags": [
@@ -1227,6 +1287,28 @@
           "unknown"
         ],
         "title": "TierCounts"
+      },
+      "TlsProbeRequest": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 253,
+            "title": "Host",
+            "description": "Host name or IP, e.g. example.com"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "default": 443
+          }
+        },
+        "type": "object",
+        "required": [
+          "host"
+        ],
+        "title": "TlsProbeRequest"
       },
       "ValidationError": {
         "properties": {

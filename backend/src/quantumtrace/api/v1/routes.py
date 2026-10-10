@@ -13,8 +13,9 @@ from quantumtrace.api.settings import Settings, get_settings
 from quantumtrace.api.uploads import materialise
 from quantumtrace.cbom.cyclonedx import to_cyclonedx
 from quantumtrace.core.classifier import Rule, default_classifier
-from quantumtrace.core.engine import run_scan
+from quantumtrace.core.engine import run_probe, run_scan
 from quantumtrace.core.models import Model, ScanResult, ScanSummary
+from quantumtrace.scanners.network.probe import ProbeError, ProbeRefused
 from quantumtrace.store.repository import ScanRepository
 
 public = APIRouter(tags=["meta"])
@@ -38,6 +39,11 @@ class Sample(Model):
 
 class SampleScanRequest(Model):
     sample: str
+
+
+class TlsProbeRequest(Model):
+    host: str = Field(max_length=253, description="Host name or IP, e.g. example.com")
+    port: int = Field(default=443, ge=1, le=65535)
 
 
 @public.get("/health", operation_id="health")
@@ -102,6 +108,21 @@ def upload_targets(files: list[UploadFile]) -> list[str]:
         top, sep, _ = (f.filename or "upload").replace("\\", "/").lstrip("/").partition("/")
         targets[top + sep] = None
     return list(targets)
+
+
+@router.post("/probes/tls", tags=["scans"], operation_id="probeTls")
+def probe_tls(body: TlsProbeRequest, settings: SettingsDep, repo: Repo) -> ScanResult:
+    """Handshake with a live host and classify what it negotiates: TLS version, key exchange
+    (classical or hybrid ML-KEM), cipher, what it still permits over TLS 1.2, and the leaf
+    certificate key. Public addresses only, unless the API runs with QT_PROBE_PRIVATE."""
+    try:
+        result = run_probe(body.host, body.port, allow_private=settings.probe_private)
+    except ProbeRefused as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except ProbeError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    repo.save(result)
+    return result
 
 
 def _relativise(result: ScanResult, root: Path, prefix: str) -> None:

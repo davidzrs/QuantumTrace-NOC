@@ -86,6 +86,9 @@ export function createClient({ baseUrl, apiKey, fetch: fetchImpl }: ClientOption
       ),
     scanSample: (sample: string) =>
       unwrap(http.POST("/api/v1/scans/sample", { body: { sample } })),
+    /** Handshake with a live host from the API and classify what it negotiates. */
+    probeTls: (host: string, port = 443) =>
+      unwrap(http.POST("/api/v1/probes/tls", { body: { host, port } })),
     /**
      * Upload files, folders or .zip archives. Pass `{ file, path }` to keep a file's place in a
      * folder (`repo/src/auth.py`): evidence then points at that path. The API takes at most

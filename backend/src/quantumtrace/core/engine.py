@@ -12,6 +12,7 @@ from quantumtrace.core.classifier import Classifier, default_classifier
 from quantumtrace.core.models import CryptoAsset, Finding, ScanNote, ScanResult
 from quantumtrace.core.scoring import score
 from quantumtrace.scanners import Scanner, registry
+from quantumtrace.scanners.network import probe
 
 IGNORED_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".idea", ".vscode"}
 
@@ -62,4 +63,27 @@ def run_scan(
         score=score(findings),
         limitations=notes,
         errors=errors,
+    )
+
+
+def run_probe(
+    host: str, port: int = 443, *, allow_private: bool = False, classifier: Classifier | None = None
+) -> ScanResult:
+    """Probe a live TLS endpoint. Raises `ProbeError` (message safe to show) when the host is
+    not allowed or doesn't complete a handshake."""
+    classifier = classifier or default_classifier()
+    target = probe.resolve_public(host, port, allow_private=allow_private)
+    findings: list[Finding] = []
+    notes: list[ScanNote] = []
+    for item in probe.probe(target):
+        if isinstance(item, CryptoAsset):
+            findings.append(classifier.classify(item))
+        elif item not in notes:
+            notes.append(item)
+    return ScanResult(
+        targets=[f"{target.host}:{target.port}"],
+        scanners=[probe.SCANNER],
+        findings=findings,
+        score=score(findings),
+        limitations=notes,
     )

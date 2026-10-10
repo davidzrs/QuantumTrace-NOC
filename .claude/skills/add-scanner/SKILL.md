@@ -56,7 +56,9 @@ class MyScanner:
   preamble (STARTTLS, SSLRequest). `ssh.py` parses KEXINIT and negotiates per RFC 4253. Map new
   IANA ids in `rules/tls.py` (`CIPHER_SUITES`, `NAMED_GROUPS`). Evidence context carries
   `server`, `server_port`, `service` and `sni`.
-- **Live TLS probe** (future): `ssl`/`socket` handshake per host. Reuse `rules/tls.py`.
+- **Live TLS probe** (`scanners/network/probe.py`): hand-built ClientHellos (one offering
+  X25519MLKEM768, one TLS 1.2-only) fed through the pcap `tls_assets`, plus an `ssl` handshake
+  for the leaf certificate. `resolve_public` is the SSRF guard; tests use local `ssl` servers.
 
 ## 4. Verify
 ```sh
