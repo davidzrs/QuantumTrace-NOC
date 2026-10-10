@@ -50,5 +50,10 @@ export default defineWebExtConfig({
 });
 ```
 
-Point it at a deployed API from the extension's settings page (API address, optional API key,
+The web app's home page offers both zips for download ("Download for Chrome / Firefox").
+`frontend/apps/web/scripts/bundle-extension.mjs` builds them on every web `dev` and `build`, with
+`WXT_API_URL` set from `VITE_API_URL` and `WXT_WEB_URL` from `VITE_WEB_URL` (or Vercel's production
+URL), so a downloaded extension already points at that deployment.
+
+Point it at another API from the extension's settings page (API address, optional API key,
 web app address for full reports).

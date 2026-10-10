@@ -34,3 +34,4 @@ reports/
 .output/
 .wxt/
 web-ext.config.ts
+frontend/apps/web/public/extension/

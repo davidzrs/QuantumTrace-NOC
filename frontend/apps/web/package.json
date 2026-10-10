@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "pnpm bundle-extension && vite",
+    "build": "pnpm bundle-extension && tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bundle-extension": "node scripts/bundle-extension.mjs"
   },
   "dependencies": {
     "@quantumtrace/sdk": "workspace:*",

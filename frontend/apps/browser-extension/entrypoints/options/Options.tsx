@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { DEFAULTS, loadSettings, originPattern, saveSettings, type Settings } from "../../lib/settings";
+import { DEFAULTS, LOCAL_API, loadSettings, originPattern, saveSettings, type Settings } from "../../lib/settings";
 
 export function Options() {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
@@ -42,7 +42,7 @@ export function Options() {
       <div className="field">
         <label htmlFor="api">API address</label>
         <input id="api" type="url" required value={settings.apiUrl} onChange={set("apiUrl")} />
-        <small>`make dev` serves it at {DEFAULTS.apiUrl}.</small>
+        <small>`make dev` serves it at {LOCAL_API}.</small>
       </div>
       <div className="field">
         <label htmlFor="key">API key</label>

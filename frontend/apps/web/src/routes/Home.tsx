@@ -122,7 +122,36 @@ export function Home() {
         )}
       </section>
 
-      <section aria-labelledby="history" className="grid grid-cols-[minmax(0,1fr)] gap-4">
+      <section aria-labelledby="extension" className="grid grid-cols-[minmax(0,1fr)] gap-4">
+        <h2 id="extension" className="text-2xl font-bold tracking-tight">
+          Check sites as you browse
+        </h2>
+        <p className="max-w-[64ch] text-ink-muted">
+          The browser extension asks this scanner whether the site in your tab uses post-quantum
+          key exchange, and what its certificate would lose to Shor’s algorithm. Unzip it, then
+          load the folder from <span className="font-mono text-sm">chrome://extensions</span> with
+          Developer mode on and “Load unpacked”. In Firefox, load the zip as a temporary add-on
+          from <span className="font-mono text-sm">about:debugging</span>.
+        </p>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <a
+            href="/extension/quantumtrace-chrome.zip"
+            download
+            className="bg-ink px-4 py-2.5 font-semibold text-ground hover:opacity-90"
+          >
+            Download for Chrome
+          </a>
+          <a
+            href="/extension/quantumtrace-firefox.zip"
+            download
+            className="font-semibold underline decoration-rule-strong underline-offset-4 hover:decoration-ink"
+          >
+            Download for Firefox
+          </a>
+        </div>
+      </section>
+
+      <section aria-labelledby="history"className="grid grid-cols-[minmax(0,1fr)] gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 id="history" className="text-2xl font-bold tracking-tight">
             Your scans
