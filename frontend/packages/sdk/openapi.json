@@ -258,14 +258,19 @@
         "operationId": "listScans",
         "parameters": [
           {
-            "name": "limit",
+            "name": "ids",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
-              "type": "integer",
-              "default": 50,
-              "title": "Limit"
-            }
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 50,
+              "description": "Scan ids to summarise. There is deliberately no way to list every scan: each client keeps the ids of the scans it ran.",
+              "title": "Ids"
+            },
+            "description": "Scan ids to summarise. There is deliberately no way to list every scan: each client keeps the ids of the scans it ran."
           },
           {
             "name": "x-api-key",
@@ -356,6 +361,56 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "Delete Scan",
+        "description": "Whoever holds a scan's id can read it, so they can also delete it. Idempotent.",
+        "operationId": "deleteScan",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",

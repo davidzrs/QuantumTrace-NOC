@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import Field
 
 from quantumtrace import __version__
@@ -108,9 +108,22 @@ def _relativise(result: ScanResult, root: Path, prefix: str) -> None:
             ev.context = {k: fix(v) for k, v in ev.context.items()}
 
 
+MAX_HISTORY = 50
+
+
 @router.get("/scans", tags=["scans"], operation_id="listScans")
-def list_scans(repo: Repo, limit: int = 50) -> list[ScanSummary]:
-    return repo.list(limit)
+def list_scans(
+    repo: Repo,
+    ids: Annotated[
+        list[str],
+        Query(
+            max_length=MAX_HISTORY,
+            description="Scan ids to summarise. There is deliberately no way to list every scan: "
+            "each client keeps the ids of the scans it ran.",
+        ),
+    ],
+) -> list[ScanSummary]:
+    return repo.summaries(ids)
 
 
 @router.get("/scans/{scan_id}", tags=["scans"], operation_id="getScan")
@@ -119,6 +132,17 @@ def get_scan(scan_id: str, repo: Repo) -> ScanResult:
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Scan not found")
     return result
+
+
+@router.delete(
+    "/scans/{scan_id}",
+    tags=["scans"],
+    operation_id="deleteScan",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_scan(scan_id: str, repo: Repo) -> None:
+    """Whoever holds a scan's id can read it, so they can also delete it. Idempotent."""
+    repo.delete(scan_id)
 
 
 @router.get("/scans/{scan_id}/cbom", tags=["scans"], operation_id="getScanCbom")

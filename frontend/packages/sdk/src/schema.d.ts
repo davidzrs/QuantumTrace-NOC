@@ -101,7 +101,11 @@ export interface paths {
         get: operations["getScan"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Scan
+         * @description Whoever holds a scan's id can read it, so they can also delete it. Idempotent.
+         */
+        delete: operations["deleteScan"];
         options?: never;
         head?: never;
         patch?: never;
@@ -567,8 +571,9 @@ export interface operations {
     };
     listScans: {
         parameters: {
-            query?: {
-                limit?: number;
+            query: {
+                /** @description Scan ids to summarise. There is deliberately no way to list every scan: each client keeps the ids of the scans it ran. */
+                ids: string[];
             };
             header?: {
                 "x-api-key"?: string | null;
@@ -654,6 +659,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ScanResult"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deleteScan: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

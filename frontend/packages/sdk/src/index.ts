@@ -59,10 +59,21 @@ export function createClient({ baseUrl, apiKey, fetch: fetchImpl }: ClientOption
     health: () => unwrap(http.GET("/api/v1/health")),
     rules: () => unwrap(http.GET("/api/v1/rules")),
     samples: () => unwrap(http.GET("/api/v1/samples")),
-    listScans: (limit = 50) =>
-      unwrap(http.GET("/api/v1/scans", { params: { query: { limit } } })),
+    /** Summaries of the given scans. The API never lists other people's scans. */
+    listScans: (ids: string[]) =>
+      unwrap(http.GET("/api/v1/scans", { params: { query: { ids } } })),
     getScan: (scanId: string) =>
       unwrap(http.GET("/api/v1/scans/{scan_id}", { params: { path: { scan_id: scanId } } })),
+    /** Delete a scan and its report. Succeeds if it is already gone. */
+    deleteScan: async (scanId: string): Promise<void> => {
+      const { error, response } = await http.DELETE("/api/v1/scans/{scan_id}", {
+        params: { path: { scan_id: scanId } },
+      });
+      if (!response.ok) {
+        const detail = (error as { detail?: unknown } | undefined)?.detail ?? error;
+        throw new QuantumTraceError(response.status, detail);
+      }
+    },
     getCbom: (scanId: string) =>
       unwrap(
         http.GET("/api/v1/scans/{scan_id}/cbom", { params: { path: { scan_id: scanId } } }),

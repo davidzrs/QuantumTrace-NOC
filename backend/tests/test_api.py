@@ -61,11 +61,25 @@ def test_scan_sample_then_fetch_and_export(client: TestClient) -> None:
     assert scan["score"]["counts"]["critical"] > 0
 
     assert client.get(f"/api/v1/scans/{scan['id']}").json()["id"] == scan["id"]
-    assert client.get("/api/v1/scans").json()[0]["id"] == scan["id"]
+    history = client.get("/api/v1/scans", params={"ids": [scan["id"], "missing"]}).json()
+    assert [h["id"] for h in history] == [scan["id"]]
     files = {f["asset"]["evidence"]["context"].get("file") for f in scan["findings"]}
     assert all(p.startswith("samples/cloud-posture/") for p in files), files
     cbom = client.get(f"/api/v1/scans/{scan['id']}/cbom").json()
     assert cbom["specVersion"] == "1.6"
+
+
+def test_scans_cannot_be_listed_without_ids(client: TestClient) -> None:
+    client.post("/api/v1/scans/sample", json={"sample": "cloud-posture"})
+    assert client.get("/api/v1/scans").status_code == 422
+
+
+def test_delete_scan(client: TestClient) -> None:
+    scan = client.post("/api/v1/scans/sample", json={"sample": "cloud-posture"}).json()
+    assert client.delete(f"/api/v1/scans/{scan['id']}").status_code == 204
+    assert client.get(f"/api/v1/scans/{scan['id']}").status_code == 404
+    assert client.get("/api/v1/scans", params={"ids": [scan["id"]]}).json() == []
+    assert client.delete(f"/api/v1/scans/{scan['id']}").status_code == 204  # idempotent
 
 
 def test_unknown_sample_404(client: TestClient) -> None:
