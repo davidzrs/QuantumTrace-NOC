@@ -2,7 +2,7 @@
   "name": "quantumtrace-vscode",
   "displayName": "QuantumTrace",
   "description": "Highlights quantum-vulnerable cryptography in Python, Java and Go, explains the risk and says what to migrate to.",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "publisher": "quantumtrace",
   "repository": {
@@ -194,14 +194,16 @@
         "quantumtrace.backend": {
           "type": "string",
           "enum": [
+            "auto",
             "cli",
             "api"
           ],
           "enumDescriptions": [
-            "Run the local QuantumTrace CLI. Code never leaves this machine.",
-            "Upload files to a QuantumTrace API."
+            "Run the local QuantumTrace CLI. If it is not installed, ask once before using the API.",
+            "Always run the local QuantumTrace CLI. Code never leaves this machine.",
+            "Always upload files to the QuantumTrace API."
           ],
-          "default": "cli",
+          "default": "auto",
           "description": "How the extension reaches the QuantumTrace engine."
         },
         "quantumtrace.cli.command": {
@@ -217,7 +219,7 @@
         "quantumtrace.api.url": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Base URL of the QuantumTrace API, for example `http://localhost:8000`. Used when `#quantumtrace.backend#` is `api`."
+          "markdownDescription": "Base URL of the QuantumTrace API, for example `http://localhost:8000`. Leave empty to use the API this copy of the extension was built for, if any."
         },
         "quantumtrace.scanOnSave": {
           "type": "boolean",
@@ -259,7 +261,7 @@
     }
   },
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node20 --external:vscode --sourcemap --outfile=dist/extension.js",
+    "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",

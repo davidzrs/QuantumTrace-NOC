@@ -2,5 +2,6 @@ src/**
 node_modules/**
 dist/**/*.map
 .vscodeignore
+build.mjs
 eslint.config.mjs
 tsconfig.json

@@ -15,6 +15,17 @@ export interface Engine {
 /** A failure the user can act on: the message says what failed and what to do next. */
 export class EngineError extends Error {}
 
+/** The local CLI is not installed, or not where quantumtrace.cli.command points. */
+export class CliNotFoundError extends EngineError {}
+
+// Replaced by build.mjs. The package the web app offers for download is built with that
+// deployment's API, so it can work on a machine that has no local scanner.
+declare const __QT_DEFAULT_API_URL__: string | undefined;
+
+/** The API this build offers when no local scanner is found; empty in a plain local build. */
+export const DEFAULT_API_URL: string =
+  typeof __QT_DEFAULT_API_URL__ === "string" ? __QT_DEFAULT_API_URL__ : "";
+
 const MAX_CLI_OUTPUT = 128 * 1024 * 1024;
 const SOURCE_EXTENSIONS = new Set([".py", ".java", ".go"]);
 // directories the engine skips too (core/engine.py); pruned here only to avoid uploading them
@@ -60,12 +71,34 @@ export function cliEngine(command: readonly string[]): Engine {
 
 function cliFailure(bin: string, error: ExecFileException, stderr: string): EngineError {
   if (error.code === "ENOENT") {
-    return new EngineError(
+    return new CliNotFoundError(
       `QuantumTrace CLI not found (tried "${bin}"). Install it, or set quantumtrace.cli.command to the command that runs it.`,
     );
   }
   const detail = stderr.trim().split(/\r?\n/).slice(-3).join(" ") || error.message;
   return new EngineError(`The QuantumTrace CLI failed: ${detail}`);
+}
+
+/** Scans with the local CLI. Only when the CLI is not installed, and only if `mayUseApi` agrees,
+ * it scans through the API instead: code never leaves the machine without that answer. */
+export function autoEngine(
+  cli: Engine,
+  api: Engine | undefined,
+  mayUseApi: () => Promise<boolean>,
+): Engine {
+  return {
+    async scan(targets, root) {
+      try {
+        return await cli.scan(targets, root);
+      } catch (error) {
+        if (!(error instanceof CliNotFoundError) || !api) throw error;
+        if (await mayUseApi()) return api.scan(targets, root);
+        throw new CliNotFoundError(
+          `${error.message} To scan through the QuantumTrace API instead, set quantumtrace.backend to api.`,
+        );
+      }
+    },
+  };
 }
 
 export interface ApiOptions {

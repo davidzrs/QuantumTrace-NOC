@@ -2,7 +2,16 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { apiEngine, cliEngine, EngineError } from "./engine";
+import {
+  apiEngine,
+  autoEngine,
+  cliEngine,
+  CliNotFoundError,
+  DEFAULT_API_URL,
+  type Engine,
+  EngineError,
+  type Scan,
+} from "./engine";
 import { md5 } from "./fixtures";
 
 /** Stands in for the CLI: `node -e <script>` receives the same arguments the CLI would. */
@@ -16,6 +25,12 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
+});
+
+describe("DEFAULT_API_URL", () => {
+  it("is empty unless the build sets it, so a plain build never offers an API by itself", () => {
+    expect(DEFAULT_API_URL).toBe("");
+  });
 });
 
 describe("cliEngine", () => {
@@ -44,6 +59,67 @@ describe("cliEngine", () => {
 
   it("rejects an empty command", async () => {
     await expect(cliEngine([]).scan([root], root)).rejects.toThrow(/cli\.command is empty/);
+  });
+});
+
+describe("autoEngine", () => {
+  const EMPTY: Scan = { findings: [], limitations: [], errors: [] };
+  const viaApi: Scan = { ...EMPTY, errors: ["from the api"] };
+  const missingCli = cliEngine(["quantumtrace-cli-that-is-not-installed"]);
+  const workingCli = cliEngine(
+    fakeCli("console.log(JSON.stringify({findings: [], limitations: [], errors: ['from the cli']}))"),
+  );
+
+  /** An API engine and an answer to the consent question, both counting how often they are used. */
+  function setup(answer: boolean) {
+    const calls = { api: 0, asked: 0 };
+    const api: Engine = {
+      scan: () => {
+        calls.api += 1;
+        return Promise.resolve(viaApi);
+      },
+    };
+    const mayUseApi = () => {
+      calls.asked += 1;
+      return Promise.resolve(answer);
+    };
+    return { calls, api, mayUseApi };
+  }
+
+  it("uses the local CLI when it is there, without asking or uploading", async () => {
+    const { calls, api, mayUseApi } = setup(true);
+    const scan = await autoEngine(workingCli, api, mayUseApi).scan([root], root);
+    expect(scan.errors).toEqual(["from the cli"]);
+    expect(calls).toEqual({ api: 0, asked: 0 });
+  });
+
+  it("scans through the API when the CLI is missing and the user agreed", async () => {
+    const { calls, api, mayUseApi } = setup(true);
+    const scan = await autoEngine(missingCli, api, mayUseApi).scan([root], root);
+    expect(scan).toBe(viaApi);
+    expect(calls).toEqual({ api: 1, asked: 1 });
+  });
+
+  it("uploads nothing when the user said no, and says how to change that", async () => {
+    const { calls, api, mayUseApi } = setup(false);
+    const scan = autoEngine(missingCli, api, mayUseApi).scan([root], root);
+    await expect(scan).rejects.toThrow(CliNotFoundError);
+    await expect(scan).rejects.toThrow(/not found.*set quantumtrace\.backend to api/);
+    expect(calls.api).toBe(0);
+  });
+
+  it("does not ask when there is no API to fall back to", async () => {
+    const { calls, mayUseApi } = setup(true);
+    const scan = autoEngine(missingCli, undefined, mayUseApi).scan([root], root);
+    await expect(scan).rejects.toThrow(/not found.*quantumtrace\.cli\.command/);
+    expect(calls.asked).toBe(0);
+  });
+
+  it("does not fall back when the CLI is installed but fails", async () => {
+    const { calls, api, mayUseApi } = setup(true);
+    const broken = cliEngine(fakeCli("console.error('boom'); process.exit(2)"));
+    await expect(autoEngine(broken, api, mayUseApi).scan([root], root)).rejects.toThrow(/boom/);
+    expect(calls).toEqual({ api: 0, asked: 0 });
   });
 });
 
