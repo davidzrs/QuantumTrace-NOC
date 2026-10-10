@@ -106,16 +106,28 @@ def _is_gzip(path: Path) -> bool:
         return fh.read(2) == b"\x1f\x8b"
 
 
-def _extract(archive: Path, dest: Path, budget: _Budget) -> None:
+def _extract(
+    archive: Path,
+    dest: Path,
+    budget: _Budget,
+    *,
+    keep: Callable[[PurePosixPath, int], bool] | None = None,
+    strip_top: bool = False,
+) -> tuple[int, int]:
+    """Unpack `archive` into `dest`. `keep(path, size)` filters entries; `strip_top` drops a
+    single top-level folder whatever its name. Returns (files unpacked, files in the archive)."""
+    kept = 0
     with zipfile.ZipFile(archive) as zf:
         entries = [(i, _safe_name(i.filename)) for i in zf.infolist() if not i.is_dir()]
         # repo.zip usually holds repo/...: unpack to repo/app.py, not repo/repo/app.py
         tops = {name.parts[0] for _, name in entries if len(name.parts) > 1}
         nested = len(tops) == 1 and all(len(n.parts) > 1 for _, n in entries)
-        strip = 1 if nested and tops == {dest.name} else 0
+        strip = 1 if nested and (strip_top or tops == {dest.name}) else 0
         for info, full in entries:
             name = PurePosixPath(*full.parts[strip:])
             if IGNORED_DIRS.intersection(name.parts[:-1]):
+                continue
+            if keep is not None and not keep(name, info.file_size):
                 continue
             out = dest / name
             if not out.resolve().is_relative_to(dest.resolve()):
@@ -124,3 +136,5 @@ def _extract(archive: Path, dest: Path, budget: _Budget) -> None:
             # count the bytes actually written: the size in the zip header can lie
             with zf.open(info) as src:
                 _copy(src, out, budget.unpack)
+            kept += 1
+    return kept, len(entries)

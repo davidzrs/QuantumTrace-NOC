@@ -532,9 +532,20 @@ function CodeSnippet({ finding: f, evidence: e }: { finding: Finding; evidence: 
   const meta = TIER[f.classification.tier];
   const first = e.snippet_start_line ?? e.line ?? 1;
   const lines = e.snippet.split("\n");
+  // Scans of a GitHub repository link each line to that commit on GitHub.
+  const source = e.context?.source_url;
   return (
     <figure className="m-0 grid min-w-0 gap-1.5">
-      <figcaption className="font-mono text-xs break-all text-ink-muted">{evidenceLabel(e)}</figcaption>
+      <figcaption className="font-mono text-xs break-all text-ink-muted">
+        {source?.startsWith("https://github.com/") ? (
+          <a href={source} target="_blank" rel="noreferrer" className="link text-ink-muted">
+            {evidenceLabel(e)}
+            <span className="sr-only"> (opens on GitHub)</span>
+          </a>
+        ) : (
+          evidenceLabel(e)
+        )}
+      </figcaption>
       <pre className="code-block">
         <code className="grid min-w-max">
           {lines.map((text, i) => {

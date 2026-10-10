@@ -5,10 +5,12 @@ import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import Field
 
 from quantumtrace import __version__
+from quantumtrace.api import github
 from quantumtrace.api.deps import get_repository, require_api_key
 from quantumtrace.api.settings import Settings, get_settings
 from quantumtrace.api.uploads import display_name, materialise
@@ -35,6 +37,9 @@ class Health(Model):
         "Clients that see this field may gzip each file and append .gz to its name."
     )
     persistent: bool = Field(description="Whether scan history survives an API restart")
+    max_repo_mb: int = Field(
+        description="Largest GitHub repository zip that /scans/github downloads"
+    )
 
 
 class Sample(Model):
@@ -44,6 +49,14 @@ class Sample(Model):
 
 class SampleScanRequest(Model):
     sample: str
+
+
+class GithubScanRequest(Model):
+    url: str = Field(
+        max_length=500,
+        description="A public repository, e.g. https://github.com/owner/repo, or a branch, tag, "
+        "commit or folder in it: https://github.com/owner/repo/tree/main/src",
+    )
 
 
 class TlsProbeRequest(Model):
@@ -59,6 +72,7 @@ def health(settings: SettingsDep, repo: Repo) -> Health:
         max_upload_mb=settings.max_upload_mb,
         max_unpacked_mb=settings.max_unpacked_mb,
         persistent=repo.persistent,
+        max_repo_mb=settings.max_repo_mb,
     )
 
 
@@ -108,6 +122,33 @@ async def scan_upload(
         )
         result = run_scan([dest], display_targets=upload_targets(files))
         _relativise(result, dest, "")
+    repo.save(result)
+    return result
+
+
+@router.post("/scans/github", tags=["scans"], operation_id="scanGithub")
+def scan_github(
+    body: GithubScanRequest,
+    settings: SettingsDep,
+    repo: Repo,
+    http: Annotated[httpx.Client, Depends(github.github_http)],
+) -> ScanResult:
+    """Scan a public GitHub repository without uploading it: the API downloads the commit's
+    archive from GitHub and reads only the files a scanner understands. The target names the
+    exact commit, and code findings link to their line on GitHub (`context.source_url`)."""
+    with tempfile.TemporaryDirectory(prefix="qt-gh-") as tmp:
+        dest = Path(tmp)
+        fetched = github.fetch(
+            body.url,
+            dest,
+            http,
+            max_download=settings.max_repo_mb * 1024 * 1024,
+            max_unpacked=settings.max_unpacked_mb * 1024 * 1024,
+        )
+        result = run_scan([fetched.root], display_targets=[fetched.label])
+        _relativise(result, dest, "")
+    github.link_evidence(result, fetched)
+    result.limitations.insert(0, fetched.note)
     repo.save(result)
     return result
 

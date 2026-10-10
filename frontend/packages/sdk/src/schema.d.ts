@@ -90,6 +90,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scans/github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Github
+         * @description Scan a public GitHub repository without uploading it: the API downloads the commit's
+         *     archive from GitHub and reads only the files a scanner understands. The target names the
+         *     exact commit, and code findings link to their line on GitHub (`context.source_url`).
+         */
+        post: operations["scanGithub"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/probes/tls": {
         parameters: {
             query?: never;
@@ -290,6 +312,14 @@ export interface components {
             asset: components["schemas"]["CryptoAsset"];
             classification: components["schemas"]["Classification"];
         };
+        /** GithubScanRequest */
+        GithubScanRequest: {
+            /**
+             * Url
+             * @description A public repository, e.g. https://github.com/owner/repo, or a branch, tag, commit or folder in it: https://github.com/owner/repo/tree/main/src
+             */
+            url: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -316,6 +346,11 @@ export interface components {
              * @description Whether scan history survives an API restart
              */
             persistent: boolean;
+            /**
+             * Max Repo Mb
+             * @description Largest GitHub repository zip that /scans/github downloads
+             */
+            max_repo_mb: number;
         };
         /**
          * Observation
@@ -672,6 +707,41 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_scanUpload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scanGithub: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GithubScanRequest"];
             };
         };
         responses: {

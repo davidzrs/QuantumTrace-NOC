@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # Bytes after .zip and .gz uploads are unpacked (also the zip-bomb guard). On Vercel this
     # keeps a scan inside the function's 60 s limit and its /tmp space.
     max_unpacked_mb: int = 50 if _ON_VERCEL else 500
+    # Size of a GitHub repository's zip that /scans/github downloads. The server fetches it, so
+    # Vercel's request limit doesn't apply; the cap keeps the download inside the 60 s limit.
+    # Only the files a scanner reads are unpacked, and those count against max_unpacked_mb.
+    max_repo_mb: int = 150 if _ON_VERCEL else 1000
     # Let /probes/tls reach private and loopback addresses and any port. Only for a local API:
     # on a shared deployment it lets callers probe the server's own network (SSRF).
     probe_private: bool = False

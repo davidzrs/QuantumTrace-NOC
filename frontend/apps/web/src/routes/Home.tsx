@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { HeroGlow, useScramble } from "../components/HeroGlow";
+import { RepoScan } from "../components/RepoScan";
 import { ScanBench, type RunningScan } from "../components/ScanBench";
 import { api } from "../lib/api";
 import { formatWhen } from "../lib/format";
@@ -103,6 +104,7 @@ export function Home() {
                 : `The scan didn’t run: ${scanError.message}. Check that the scanner is online and try again.`}
             </p>
           )}
+          <RepoScan disabled={running !== null} onScanned={onScanned} />
         </ScanBench>
 
         <section aria-labelledby="extension-title" className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-5 rounded-xl border border-rule bg-surface p-5 sm:px-7 sm:py-6 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-center">
