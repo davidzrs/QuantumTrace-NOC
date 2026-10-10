@@ -10,7 +10,7 @@ from pydantic import Field
 from quantumtrace import __version__
 from quantumtrace.api.deps import get_repository, require_api_key
 from quantumtrace.api.settings import Settings, get_settings
-from quantumtrace.api.uploads import materialise
+from quantumtrace.api.uploads import display_name, materialise
 from quantumtrace.cbom.cyclonedx import to_cyclonedx
 from quantumtrace.core.classifier import Rule, default_classifier
 from quantumtrace.core.engine import run_probe, run_scan
@@ -28,7 +28,11 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 class Health(Model):
     status: str
     version: str
-    max_upload_mb: int = Field(description="Largest total upload a scan accepts")
+    max_upload_mb: int = Field(description="Largest request a scan accepts, after compression")
+    max_unpacked_mb: int = Field(
+        description="Largest total a scan accepts once .zip and .gz uploads are unpacked. "
+        "Clients that see this field may gzip each file and append .gz to its name."
+    )
     persistent: bool = Field(description="Whether scan history survives an API restart")
 
 
@@ -52,6 +56,7 @@ def health(settings: SettingsDep, repo: Repo) -> Health:
         status="ok",
         version=__version__,
         max_upload_mb=settings.max_upload_mb,
+        max_unpacked_mb=settings.max_unpacked_mb,
         persistent=repo.persistent,
     )
 
@@ -94,7 +99,12 @@ async def scan_upload(
 ) -> ScanResult:
     with tempfile.TemporaryDirectory(prefix="qt-") as tmp:
         dest = Path(tmp)
-        await materialise(files, dest, settings.max_upload_mb * 1024 * 1024)
+        await materialise(
+            files,
+            dest,
+            max_upload=settings.max_upload_mb * 1024 * 1024,
+            max_unpacked=settings.max_unpacked_mb * 1024 * 1024,
+        )
         result = run_scan([dest], display_targets=upload_targets(files))
         _relativise(result, dest, "")
     repo.save(result)
@@ -105,7 +115,8 @@ def upload_targets(files: list[UploadFile]) -> list[str]:
     """What the user picked: loose files by name, a folder upload once as `folder/`."""
     targets: dict[str, None] = {}
     for f in files:
-        top, sep, _ = (f.filename or "upload").replace("\\", "/").lstrip("/").partition("/")
+        name = display_name(f.filename or "upload")
+        top, sep, _ = name.replace("\\", "/").lstrip("/").partition("/")
         targets[top + sep] = None
     return list(targets)
 

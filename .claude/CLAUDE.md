@@ -149,9 +149,13 @@ Both halves run on Vercel as two projects from this repo (see the `deploy` skill
   Upstash Redis (Vercel Marketplace). It injects `KV_REST_API_URL`/`KV_REST_API_TOKEN`, and
   `store/repository.py` keeps scans for 7 days. Without them it falls back to process memory
   (fine locally and in Docker).
-- **Upload cap.** Vercel rejects request bodies over 4.5 MB, so on Vercel `max_upload_mb`
-  defaults to 4. `/health` advertises it and the web app checks sizes before uploading. For
-  bigger captures, run locally or use the Docker image (`backend/Dockerfile`, `fly.toml`).
+- **Upload caps.** Two limits, both advertised by `/health`. `max_upload_mb` is bytes on the
+  wire: Vercel rejects request bodies over 4.5 MB, so it defaults to 4 there (200 elsewhere).
+  `max_unpacked_mb` is the size after `.zip` and `.gz` uploads are unpacked: 50 on Vercel (the
+  60 s function limit), 500 elsewhere. The web app gzips each file before upload (`lib/pack.ts`,
+  sent as `name.gz`) and checks the unpacked total up front. Zip entries under `.git`,
+  `node_modules` and other ignored folders are not unpacked. For bigger captures, run locally
+  or use the Docker image (`backend/Dockerfile`, `fly.toml`).
 
 ## Skills
 

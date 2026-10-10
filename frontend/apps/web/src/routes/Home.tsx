@@ -1,16 +1,19 @@
-import type { ScanResult } from "@quantumtrace/sdk";
+import type { ScanResult, UploadItem } from "@quantumtrace/sdk";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import { ScanBench } from "../components/ScanBench";
 import { api } from "../lib/api";
 import { formatDate } from "../lib/format";
 import { forget, readHistory, remember, writeHistory } from "../lib/history";
+import { pack, UploadTooLarge } from "../lib/pack";
 
 const READS = [
   { what: "Code", detail: "Library calls, key sizes, modes, hand-rolled primitives", files: ".py .java .go" },
   { what: "Cloud", detail: "AWS KMS keys, ACM certificates, load balancer TLS policies", files: ".json" },
   { what: "Network", detail: "TLS and SSH handshakes, including hybrid ML‑KEM", files: ".pcap .pcapng" },
 ];
+
+const MB = 1024 * 1024;
 
 const sampleLabel = (name: string) =>
   name === "all" ? "All of them" : name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, " ");
@@ -39,7 +42,15 @@ export function Home() {
     void queryClient.invalidateQueries({ queryKey: ["scans"] });
     void navigate(`/scans/${result.id}`);
   };
-  const uploadScan = useMutation({ mutationFn: api.scanFiles, onSuccess: onScanned });
+  const uploadScan = useMutation({
+    mutationFn: async (items: UploadItem[]) => {
+      // An API that reports max_unpacked_mb unpacks .gz uploads, so compress to fit more in.
+      const limits = health.data;
+      const ready = limits?.max_unpacked_mb ? await pack(items, limits.max_upload_mb * MB) : items;
+      return api.scanFiles(ready);
+    },
+    onSuccess: onScanned,
+  });
   const sampleScan = useMutation({ mutationFn: api.scanSample, onSuccess: onScanned });
   const scanning = uploadScan.isPending || sampleScan.isPending;
   const scanError = uploadScan.error ?? sampleScan.error;
@@ -98,10 +109,14 @@ export function Home() {
         <h2 id="scan" className="text-2xl font-bold tracking-tight">
           Run a scan
         </h2>
-        <ScanBench limitMb={health.data?.max_upload_mb} busy={scanning} onScan={(items) => uploadScan.mutate(items)} />
+        <ScanBench
+          limitMb={health.data ? (health.data.max_unpacked_mb ?? health.data.max_upload_mb) : undefined}
+          busy={scanning} onScan={(items) => uploadScan.mutate(items)} />
         {scanError && (
           <p role="alert" className="text-critical">
-            The scan didn’t run: {scanError.message}. Check that the scanner is online and try again.
+            {scanError instanceof UploadTooLarge
+              ? scanError.message
+              : `The scan didn’t run: ${scanError.message}. Check that the scanner is online and try again.`}
           </p>
         )}
         {!!samples.data?.length && (

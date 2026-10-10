@@ -26,7 +26,7 @@ def client(samples: Path) -> TestClient:
 def test_health(client: TestClient) -> None:
     body = client.get("/api/v1/health").json()
     assert body["status"] == "ok"
-    assert body["max_upload_mb"] == 50
+    assert (body["max_upload_mb"], body["max_unpacked_mb"]) == (200, 500)
     assert body["persistent"] is False
 
 
@@ -39,6 +39,101 @@ def test_upload_over_limit_413(samples: Path) -> None:
     )
     assert res.status_code == 413
     assert "1 MB limit" in res.json()["detail"]
+
+
+def _client_with(samples: Path, max_upload_mb: int = 200, max_unpacked_mb: int = 500) -> TestClient:
+    settings = Settings(
+        samples_dir=samples, max_upload_mb=max_upload_mb, max_unpacked_mb=max_unpacked_mb
+    )
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    return TestClient(app)
+
+
+def test_gzipped_upload_is_unpacked(samples: Path) -> None:
+    import gzip
+
+    src = samples / "network-capture" / "network.pcap"
+    client = _client_with(samples)
+    res = client.post(
+        "/api/v1/scans",
+        files=[("files", ("captures/network.pcap.gz", gzip.compress(src.read_bytes())))],
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["targets"] == ["captures/"]
+    assert "network-pcap" in body["scanners"]
+    locations = {f["asset"]["evidence"]["context"].get("file") for f in body["findings"]}
+    assert locations == {"captures/network.pcap"}
+
+
+def test_compressed_size_counts_against_upload_limit(samples: Path) -> None:
+    import gzip
+
+    # 3 MB of text gzips to a few KB: under a 1 MB upload limit, within 5 MB unpacked
+    client = _client_with(samples, max_upload_mb=1, max_unpacked_mb=5)
+    big = gzip.compress(b"import hashlib\n" * 200_000)
+    res = client.post("/api/v1/scans", files=[("files", ("app.py.gz", big))])
+    assert res.status_code == 200
+    assert res.json()["targets"] == ["app.py"]
+
+
+def test_unpacked_limit_stops_gzip_and_zip_bombs(samples: Path) -> None:
+    import gzip
+
+    client = _client_with(samples, max_upload_mb=1, max_unpacked_mb=1)
+    bomb = gzip.compress(b"\0" * (2 * 1024 * 1024))
+    res = client.post("/api/v1/scans", files=[("files", ("a.py.gz", bomb))])
+    assert res.status_code == 413
+    assert "Unpacked upload is over the 1 MB limit" in res.json()["detail"]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("a.py", b"\0" * (2 * 1024 * 1024))
+    res = client.post("/api/v1/scans", files=[("files", ("x.zip", buf.getvalue()))])
+    assert res.status_code == 413
+
+
+def test_zip_skips_dependency_folders(samples: Path) -> None:
+    # a zipped repo whose node_modules alone is over the unpacked limit still scans
+    client = _client_with(samples, max_unpacked_mb=1)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("repo/app.py", "import hashlib\nhashlib.md5(b'x')\n")
+        zf.writestr("repo/node_modules/big/index.py", b"#" * (2 * 1024 * 1024))
+        zf.writestr("repo/.git/objects/blob", b"\0" * (2 * 1024 * 1024))
+    res = client.post("/api/v1/scans", files=[("files", ("repo.zip", buf.getvalue()))])
+    assert res.status_code == 200
+    files = {f["asset"]["evidence"]["location"] for f in res.json()["findings"]}
+    assert files == {"repo/app.py"}  # not repo/repo/app.py
+
+
+def test_folder_and_zip_in_one_scan(samples: Path) -> None:
+    import gzip
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.write(samples / "network-capture" / "network.pcap", "network.pcap")
+    code = b"import hashlib\nhashlib.sha1(b'x')\n"
+    res = _client_with(samples).post(
+        "/api/v1/scans",
+        files=[
+            ("files", ("repo/src/app.py.gz", gzip.compress(code))),
+            ("files", ("captures.zip", buf.getvalue())),
+        ],
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["targets"] == ["repo/", "captures.zip"]
+    assert {"source-code", "network-pcap"} <= set(body["scanners"])
+
+
+def test_bad_gzip_is_400(samples: Path) -> None:
+    res = _client_with(samples).post(
+        "/api/v1/scans", files=[("files", ("a.py.gz", b"\x1f\x8bnot really gzip"))]
+    )
+    assert res.status_code == 400
+    assert "not a valid gzip file" in res.json()["detail"]
 
 
 def test_redis_used_when_configured(samples: Path) -> None:

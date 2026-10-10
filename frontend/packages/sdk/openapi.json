@@ -896,7 +896,12 @@
           "max_upload_mb": {
             "type": "integer",
             "title": "Max Upload Mb",
-            "description": "Largest total upload a scan accepts"
+            "description": "Largest request a scan accepts, after compression"
+          },
+          "max_unpacked_mb": {
+            "type": "integer",
+            "title": "Max Unpacked Mb",
+            "description": "Largest total a scan accepts once .zip and .gz uploads are unpacked. Clients that see this field may gzip each file and append .gz to its name."
           },
           "persistent": {
             "type": "boolean",
@@ -909,6 +914,7 @@
           "status",
           "version",
           "max_upload_mb",
+          "max_unpacked_mb",
           "persistent"
         ],
         "title": "Health"

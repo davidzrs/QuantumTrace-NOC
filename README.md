@@ -70,8 +70,12 @@ Both the API and the web app deploy to Vercel as two projects from this repo:
   persist across serverless instances, and set `QT_CORS_ORIGINS` to the web app's URL.
 - **Web**: root directory `frontend/apps/web`. Set `VITE_API_URL` to the API's URL.
 
-Uploads are capped at 4 MB on Vercel. `backend/Dockerfile` (with `fly.toml`) runs the same API
-as one long-lived process without that cap. Details are in `.claude/skills/deploy/SKILL.md`.
+On Vercel a request can carry 4 MB, so the web app gzips files before uploading. Source code and
+JSON exports usually shrink 5 to 10 times, so a scan fits if it compresses to 4 MB and unpacks
+to at most 50 MB. Folders, files and zips can be mixed in one scan. `backend/Dockerfile` (with
+`fly.toml`) runs the same API as one long-lived process with higher limits (200 MB uploaded, 500
+MB unpacked), set by `QT_MAX_UPLOAD_MB` and `QT_MAX_UNPACKED_MB`. Details are in
+`.claude/skills/deploy/SKILL.md`.
 
 ## Contributing
 

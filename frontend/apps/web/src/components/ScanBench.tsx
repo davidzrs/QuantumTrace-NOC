@@ -1,10 +1,11 @@
-import { useId, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import {
   formatBytes,
   fromDrop,
   fromInput,
   KINDS,
   MAX_FILES,
+  mergePicked,
   planIntake,
   type Intake,
   type Picked,
@@ -14,8 +15,11 @@ const MB = 1024 * 1024;
 const EXTS_SHOWN = 4;
 
 /**
- * Where a scan starts: drop or choose a folder, files or a zip, review what will be sent,
- * then scan. Only files a scanner reads leave the browser.
+ * Where a scan starts: drop or choose folders, files and zips (in any mix, over several picks),
+ * review what will be sent, then scan. Only files a scanner reads leave the browser.
+ *
+ * `limitMb` is the most a scan may hold. When the API unpacks gzip, files are compressed
+ * before upload, so this is the unpacked size rather than the bytes sent.
  */
 export function ScanBench({
   limitMb,
@@ -28,14 +32,23 @@ export function ScanBench({
 }) {
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
-  const [plan, setPlan] = useState<Intake | null>(null);
+  const [staged, setStaged] = useState<{ picked: Picked[]; skippedDirs: string[] } | null>(null);
   const filesInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const titleId = useId();
 
+  // Each pick adds to the scan: a folder, then a zip, then a capture all go up together.
   const stage = (picked: Picked[], skippedDirs: string[] = []) => {
-    if (picked.length || skippedDirs.length) setPlan(planIntake(picked, skippedDirs));
+    if (!picked.length && !skippedDirs.length) return;
+    setStaged((prev) => ({
+      picked: mergePicked(prev?.picked ?? [], picked),
+      skippedDirs: [...new Set([...(prev?.skippedDirs ?? []), ...skippedDirs])],
+    }));
   };
+  const plan = useMemo(
+    () => (staged ? planIntake(staged.picked, staged.skippedDirs) : null),
+    [staged],
+  );
 
   const blocker = plan && blockerFor(plan, limitMb);
   const n = plan?.send.length ?? 0;
@@ -77,7 +90,7 @@ export function ScanBench({
                   ? "Reading the folder…"
                   : dragging
                     ? "Drop to review what gets scanned"
-                    : "Drop a folder, files or a .zip here"}
+                    : "Drop folders, files or .zip archives here"}
               </p>
               <p className="max-w-[58ch] text-ink-muted">
                 Point it at a whole codebase: only the files a scanner reads are uploaded, and you
@@ -125,7 +138,9 @@ export function ScanBench({
           blocker={blocker}
           busy={busy}
           onScan={() => onScan(plan.send)}
-          onReset={() => setPlan(null)}
+          onAddFolder={() => folderInput.current?.click()}
+          onAddFiles={() => filesInput.current?.click()}
+          onReset={() => setStaged(null)}
           scanLabel={busy ? `Scanning ${n} ${n === 1 ? "file" : "files"}…` : `Scan ${n} ${n === 1 ? "file" : "files"}`}
         />
       )}
@@ -157,7 +172,7 @@ function blockerFor(plan: Intake, limitMb: number | undefined): string | null {
   if (!plan.send.length)
     return "Nothing here is something QuantumTrace reads. It scans .py, .java and .go source, AWS .json exports, .pcap captures and .zip archives.";
   if (plan.send.length > MAX_FILES)
-    return `That is ${plan.send.length} files and a scan takes up to ${MAX_FILES}. Zip the folder and drop the .zip, or pick a subfolder.`;
+    return `That is ${plan.send.length} files and a scan takes up to ${MAX_FILES}. Zip the folder and add the .zip instead, or pick a subfolder.`;
   if (limitMb && plan.bytes > limitMb * MB)
     return `These files add up to ${formatBytes(plan.bytes)} and this scanner takes up to ${limitMb} MB per scan. Pick a subfolder, or run QuantumTrace locally for bigger codebases.`;
   return null;
@@ -171,6 +186,8 @@ function Manifest({
   busy,
   scanLabel,
   onScan,
+  onAddFolder,
+  onAddFiles,
   onReset,
 }: {
   plan: Intake;
@@ -180,6 +197,8 @@ function Manifest({
   busy: boolean;
   scanLabel: string;
   onScan: () => void;
+  onAddFolder: () => void;
+  onAddFiles: () => void;
   onReset: () => void;
 }) {
   const { skipped } = plan;
@@ -252,13 +271,29 @@ function Manifest({
         )}
         <button
           type="button"
-          onClick={onReset}
+          onClick={onAddFolder}
           disabled={busy}
           className="border border-rule-strong px-4 py-2.5 font-semibold hover:border-ink disabled:opacity-50"
         >
-          Choose something else
+          Add a folder
         </button>
-        {!busy && <p className="text-sm text-ink-faint">Or drop another folder here.</p>}
+        <button
+          type="button"
+          onClick={onAddFiles}
+          disabled={busy}
+          className="border border-rule-strong px-4 py-2.5 font-semibold hover:border-ink disabled:opacity-50"
+        >
+          Add files or zips
+        </button>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={busy}
+          className="px-2 py-2.5 font-semibold text-ink-muted underline decoration-rule-strong underline-offset-4 hover:text-ink disabled:opacity-50"
+        >
+          Start over
+        </button>
+        {!busy && <p className="text-sm text-ink-faint">Or drop more here to add them.</p>}
       </div>
     </div>
   );

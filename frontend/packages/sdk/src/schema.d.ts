@@ -293,9 +293,14 @@ export interface components {
             version: string;
             /**
              * Max Upload Mb
-             * @description Largest total upload a scan accepts
+             * @description Largest request a scan accepts, after compression
              */
             max_upload_mb: number;
+            /**
+             * Max Unpacked Mb
+             * @description Largest total a scan accepts once .zip and .gz uploads are unpacked. Clients that see this field may gzip each file and append .gz to its name.
+             */
+            max_unpacked_mb: number;
             /**
              * Persistent
              * @description Whether scan history survives an API restart

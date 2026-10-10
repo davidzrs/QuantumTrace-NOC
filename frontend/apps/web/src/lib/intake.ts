@@ -116,6 +116,13 @@ export function planIntake(picked: Picked[], skippedDirs: string[] = []): Intake
   };
 }
 
+/** Add a new pick to what is already staged. A file picked twice (same path) is sent once. */
+export function mergePicked(staged: Picked[], added: Picked[]): Picked[] {
+  const byPath = new Map(staged.map((p) => [p.path, p]));
+  for (const p of added) byPath.set(p.path, p);
+  return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
 /** Files from an `<input>`: folder picks carry `webkitRelativePath`, plain picks only a name. */
 export function fromInput(files: FileList): Picked[] {
   return [...files].map((file) => ({ file, path: file.webkitRelativePath || file.name }));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_CODE_BYTES, planIntake, type Picked } from "./intake";
+import { MAX_CODE_BYTES, mergePicked, planIntake, type Picked } from "./intake";
 
 const pick = (path: string, size = 10): Picked => ({ file: new File(["x".repeat(size)], path), path });
 
@@ -49,5 +49,14 @@ describe("planIntake", () => {
     expect(plan.roots).toEqual(["capture.pcap", "repo/", "posture.zip"]);
     expect(plan.counts).toEqual({ code: 1, cloud: 0, capture: 1, archive: 1 });
     expect(plan.bytes).toBe(30);
+  });
+});
+
+describe("mergePicked", () => {
+  const f = (path: string) => ({ file: new File(["x"], path.split("/").pop()!), path });
+
+  it("adds a zip to a folder pick and keeps one copy of repeats", () => {
+    const merged = mergePicked([f("repo/a.py"), f("repo/b.go")], [f("captures.zip"), f("repo/a.py")]);
+    expect(merged.map((p) => p.path)).toEqual(["captures.zip", "repo/a.py", "repo/b.go"]);
   });
 });

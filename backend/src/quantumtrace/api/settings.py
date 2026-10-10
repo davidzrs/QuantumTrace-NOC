@@ -8,7 +8,6 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_SAMPLES = Path(__file__).resolve().parents[4] / "samples"
-# Vercel rejects request bodies over 4.5 MB before they reach the function.
 _ON_VERCEL = bool(os.environ.get("VERCEL"))
 
 
@@ -21,7 +20,12 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     cors_origin_regex: str | None = None  # e.g. https://quantumtrace-.*\.vercel\.app
     samples_dir: Path = _REPO_SAMPLES
-    max_upload_mb: int = 4 if _ON_VERCEL else 50
+    # Bytes on the wire per scan. Vercel rejects request bodies over 4.5 MB before they reach
+    # the function, which is why the web app gzips files before uploading.
+    max_upload_mb: int = 4 if _ON_VERCEL else 200
+    # Bytes after .zip and .gz uploads are unpacked (also the zip-bomb guard). On Vercel this
+    # keeps a scan inside the function's 60 s limit and its /tmp space.
+    max_unpacked_mb: int = 50 if _ON_VERCEL else 500
     # Let /probes/tls reach private and loopback addresses and any port. Only for a local API:
     # on a shared deployment it lets callers probe the server's own network (SSRF).
     probe_private: bool = False
