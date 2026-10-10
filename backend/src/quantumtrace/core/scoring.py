@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from quantumtrace.core.models import Exposure, Finding, RiskScore, RiskTier, TierCounts
+from quantumtrace.core.models import Exposure, Finding, RiskScore, RiskTier, SourceType, TierCounts
 
 TIER_WEIGHT: dict[RiskTier, float] = {
     RiskTier.CRITICAL: 10.0,
@@ -43,3 +43,13 @@ def score(findings: Sequence[Finding]) -> RiskScore:
     value = round(100 * sum(map(finding_weight, findings)) / (len(findings) * MAX_PER_FINDING), 1)
     grade = next((g for limit, g in GRADES if value < limit), "F")
     return RiskScore(value=value, grade=grade, counts=counts)
+
+
+def score_by_source(findings: Sequence[Finding]) -> dict[SourceType, RiskScore]:
+    """The score of each source's findings alone, so a report filtered to one source shows
+    that source's exposure rather than the whole scan's."""
+    return {
+        source: score(subset)
+        for source in SourceType
+        if (subset := [f for f in findings if f.asset.evidence.source_type is source])
+    }

@@ -1,26 +1,30 @@
-import type { ScanResult, UploadItem } from "@quantumtrace/sdk";
+import type { ScanResult, ScanSummary } from "@quantumtrace/sdk";
+import { TierGlyph } from "@quantumtrace/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ScanBench } from "../components/ScanBench";
+import { HeroGlow, useScramble } from "../components/HeroGlow";
+import { ScanBench, type RunningScan } from "../components/ScanBench";
 import { api } from "../lib/api";
-import { formatDate } from "../lib/format";
+import { formatWhen } from "../lib/format";
 import { forget, readHistory, remember, writeHistory } from "../lib/history";
+import type { Picked } from "../lib/intake";
 import { pack, UploadTooLarge } from "../lib/pack";
-
-const READS = [
-  { what: "Code", detail: "Library calls, key sizes, modes, hand-rolled primitives", files: ".py .java .go" },
-  { what: "Cloud", detail: "AWS KMS keys, ACM certificates, load balancer TLS policies", files: ".json" },
-  { what: "Network", detail: "TLS and SSH handshakes, including hybrid ML‑KEM", files: ".pcap .pcapng" },
-];
+import { TIER } from "../lib/tiers";
 
 const MB = 1024 * 1024;
+// Scans of a few files come back almost at once. Keep the progress view up long enough to read,
+// then let the lanes fill before the report opens. Skipped when motion is reduced.
+const MIN_SCAN_MS = 1200;
+const FINISH_MS = 700;
 
-const sampleLabel = (name: string) =>
-  name === "all" ? "All of them" : name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, " ");
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const calm = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function Home() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [running, setRunning] = useState<RunningScan | null>(null);
   const scans = useQuery({
     queryKey: ["scans"],
     queryFn: async () => {
@@ -33,8 +37,6 @@ export function Home() {
     },
   });
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0 });
-  // The deployed API has no samples (they sit outside its root), so this is often empty.
-  const samples = useQuery({ queryKey: ["samples"], queryFn: api.samples, retry: 0 });
 
   const onScanned = (result: ScanResult) => {
     remember(result.id);
@@ -43,17 +45,24 @@ export function Home() {
     void navigate(`/scans/${result.id}`);
   };
   const uploadScan = useMutation({
-    mutationFn: async (items: UploadItem[]) => {
+    mutationFn: async (items: Picked[]) => {
       // An API that reports max_unpacked_mb unpacks .gz uploads, so compress to fit more in.
       const limits = health.data;
       const ready = limits?.max_unpacked_mb ? await pack(items, limits.max_upload_mb * MB) : items;
-      return api.scanFiles(ready);
+      const started = Date.now();
+      const result = await api.scanFiles(ready);
+      if (!calm()) await sleep(MIN_SCAN_MS - (Date.now() - started));
+      return result;
     },
-    onSuccess: onScanned,
+    onMutate: (items) => setRunning({ started: Date.now(), items }),
+    onSuccess: async (result) => {
+      setRunning((r) => r && { ...r, result, finished: Date.now() });
+      if (!calm()) await sleep(FINISH_MS);
+      onScanned(result);
+    },
+    onSettled: () => setRunning(null),
   });
-  const sampleScan = useMutation({ mutationFn: api.scanSample, onSuccess: onScanned });
-  const scanning = uploadScan.isPending || sampleScan.isPending;
-  const scanError = uploadScan.error ?? sampleScan.error;
+  const scanError = uploadScan.error;
 
   const deleteScans = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -74,168 +83,235 @@ export function Home() {
       n === 1
         ? "Delete this scan? Its report and link stop working."
         : `Delete all ${n} scans? Their reports and links stop working.`;
-    if (n && window.confirm(prompt)) {
-      deleteScans.mutate(ids);
-    }
+    if (n && window.confirm(prompt)) deleteScans.mutate(ids);
   };
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-16">
-      <section className="grid gap-x-16 gap-y-10 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] lg:items-end">
-        <div>
-          <h1 className="max-w-[16ch] text-[2.6rem] leading-[1.03] font-extrabold tracking-[-0.03em] text-balance sm:text-[3.9rem]">
-            Find the cryptography a quantum computer will break.
-          </h1>
-          <p className="mt-6 max-w-[56ch] text-lg leading-relaxed text-ink-muted">
-            Point QuantumTrace at a codebase, cloud exports or a packet capture. It inventories
-            every algorithm, ranks each by quantum risk, and maps it to its NIST post-quantum
-            replacement, exportable as a CycloneDX&nbsp;1.6 CBOM.
-          </p>
-        </div>
-        <dl className="grid grid-cols-[minmax(0,1fr)] border-t border-ink text-sm">
-          {READS.map((r) => (
-            <div key={r.what} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-4 border-b border-rule py-3">
-              <dt className="font-semibold">{r.what}</dt>
-              <dd className="text-ink-muted">
-                {r.detail}
-                <span className="mt-0.5 block font-mono text-xs text-ink-faint">{r.files}</span>
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+    <>
+      <Hero />
 
-      <section aria-labelledby="scan" className="grid grid-cols-[minmax(0,1fr)] gap-4">
-        <h2 id="scan" className="text-2xl font-bold tracking-tight">
-          Run a scan
-        </h2>
+      <main className="mx-auto grid max-w-[1240px] grid-cols-[minmax(0,1fr)] gap-12 px-4 pt-10 pb-16 sm:px-8 sm:pt-12">
         <ScanBench
           limitMb={health.data ? (health.data.max_unpacked_mb ?? health.data.max_upload_mb) : undefined}
-          busy={scanning} onScan={(items) => uploadScan.mutate(items)} />
-        {scanError && (
-          <p role="alert" className="text-critical">
-            {scanError instanceof UploadTooLarge
-              ? scanError.message
-              : `The scan didn’t run: ${scanError.message}. Check that the scanner is online and try again.`}
-          </p>
-        )}
-        {!!samples.data?.length && (
-          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
-            <p className="text-ink-muted">No files to hand? Scan a sample:</p>
-            {[...samples.data.map((s) => s.name), "all"].map((name) => (
-              <button
-                key={name}
-                type="button"
-                disabled={scanning}
-                onClick={() => sampleScan.mutate(name)}
-                className="font-semibold underline decoration-rule-strong underline-offset-4 hover:decoration-ink disabled:opacity-50"
-              >
-                {sampleScan.isPending && sampleScan.variables === name ? "Scanning…" : sampleLabel(name)}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section aria-labelledby="extension" className="grid grid-cols-[minmax(0,1fr)] gap-4">
-        <h2 id="extension" className="text-2xl font-bold tracking-tight">
-          Check sites as you browse
-        </h2>
-        <p className="max-w-[64ch] text-ink-muted">
-          The browser extension asks this scanner whether the site in your tab uses post-quantum
-          key exchange, and what its certificate would lose to Shor’s algorithm. Unzip it, then
-          load the folder from <span className="font-mono text-sm">chrome://extensions</span> with
-          Developer mode on and “Load unpacked”. In Firefox, load the zip as a temporary add-on
-          from <span className="font-mono text-sm">about:debugging</span>.
-        </p>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-          <a
-            href="/extension/quantumtrace-chrome.zip"
-            download
-            className="bg-ink px-4 py-2.5 font-semibold text-ground hover:opacity-90"
-          >
-            Download for Chrome
-          </a>
-          <a
-            href="/extension/quantumtrace-firefox.zip"
-            download
-            className="font-semibold underline decoration-rule-strong underline-offset-4 hover:decoration-ink"
-          >
-            Download for Firefox
-          </a>
-        </div>
-      </section>
-
-      <section aria-labelledby="history"className="grid grid-cols-[minmax(0,1fr)] gap-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h2 id="history" className="text-2xl font-bold tracking-tight">
-            Your scans
-          </h2>
-          {!!scans.data?.length && (
-            <button
-              type="button"
-              onClick={deleteAll}
-              disabled={deleteScans.isPending}
-              className="font-semibold underline decoration-rule-strong underline-offset-4 hover:decoration-ink disabled:opacity-50"
-            >
-              Delete all
-            </button>
+          running={running}
+          onScan={(items) => uploadScan.mutate(items)}
+        >
+          {scanError && !running && (
+            <p role="alert" className="border-l-2 border-critical pl-4">
+              {scanError instanceof UploadTooLarge
+                ? scanError.message
+                : `The scan didn’t run: ${scanError.message}. Check that the scanner is online and try again.`}
+            </p>
           )}
-        </div>
-        {deleteScans.error && (
-          <p role="alert" className="text-critical">
-            {deleteScans.error.message}. Check that the scanner is online and try again.
-          </p>
-        )}
-        {scans.data?.length ? (
-          <div className="relative overflow-x-auto">
-            <table className="w-full min-w-[36rem] text-left">
-              <thead className="text-sm text-ink-muted">
-                <tr className="border-b border-rule-strong">
-                  <th className="py-2 pr-4 font-medium">Ran</th>
-                  <th className="py-2 pr-4 font-medium">Scanned</th>
-                  <th className="py-2 pr-4 text-right font-medium">Findings</th>
-                  <th className="py-2 pr-4 text-right font-medium">Shor-exposed</th>
-                  <th className="py-2 pr-4 text-right font-medium">Risk score</th>
-                  <th className="w-px py-2"><span className="sr-only">Delete</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {scans.data.map((s) => (
-                  <tr key={s.id} className="border-b border-rule hover:bg-surface">
-                    <td className="py-2.5 pr-4 whitespace-nowrap">
-                      <Link to={`/scans/${s.id}`} className="font-semibold underline decoration-rule-strong underline-offset-4 hover:decoration-ink">
-                        {formatDate(s.created_at)}
-                      </Link>
-                    </td>
-                    <td className="py-2.5 pr-4 font-mono text-sm text-ink-muted">{s.targets.join(", ")}</td>
-                    <td className="py-2.5 pr-4 text-right">{s.findings}</td>
-                    <td className="py-2.5 pr-4 text-right text-critical">{s.score.counts.critical}</td>
-                    <td className="py-2.5 pr-4 text-right">{s.score.value}</td>
-                    <td className="py-1.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => deleteScans.mutate([s.id])}
-                        disabled={deleteScans.isPending}
-                        aria-label={`Delete the scan from ${formatDate(s.created_at)}`}
-                        className="px-2 py-1 text-sm font-semibold text-ink-muted hover:text-critical disabled:opacity-50"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        </ScanBench>
+
+        <section aria-labelledby="extension-title" className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-5 rounded-xl border border-rule bg-surface p-5 sm:px-7 sm:py-6 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-center">
+          <div className="grid gap-2">
+            <h2 id="extension-title" className="font-display text-[19px] font-bold tracking-[-0.01em]">
+              Check sites as you browse
+            </h2>
+            <p className="max-w-[68ch] text-ink-muted">
+              The browser extension asks this scanner whether the site in your tab uses post-quantum
+              key exchange, and what its certificate would lose to Shor’s algorithm. Unzip it, then load
+              the folder from <span className="font-mono text-sm text-ink">chrome://extensions</span> with
+              Developer mode on and “Load unpacked”. In Firefox, load the zip as a temporary add-on
+              from <span className="font-mono text-sm text-ink">about:debugging</span>.
+            </p>
           </div>
-        ) : (
-          <p className="text-ink-muted">
-            {scans.isError
-              ? "Scan history is unavailable while the scanner is offline."
-              : "Nothing yet. Scans you run in this browser show up here, and only here."}
+          <div className="flex flex-wrap gap-3">
+            <a href="/extension/quantumtrace-chrome.zip" download className="btn btn-primary">
+              Download for Chrome
+            </a>
+            <a href="/extension/quantumtrace-firefox.zip" download className="btn">
+              Download for Firefox
+            </a>
+          </div>
+        </section>
+
+        <section aria-labelledby="history-title" id="history" className="grid scroll-mt-16 grid-cols-[minmax(0,1fr)] gap-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 id="history-title" className="font-display text-[22px] font-bold tracking-[-0.02em]">
+              Earlier scans
+            </h2>
+            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+              <span className="text-sm text-ink-faint">
+                {health.data?.persistent
+                  ? "Kept for 7 days, listed only in this browser"
+                  : "Held in memory until the API restarts"}
+              </span>
+              {!!scans.data?.length && (
+                <button
+                  type="button"
+                  onClick={deleteAll}
+                  disabled={deleteScans.isPending}
+                  className="link text-sm font-semibold text-ink-muted disabled:opacity-50"
+                >
+                  Delete all
+                </button>
+              )}
+            </div>
+          </div>
+          {deleteScans.error && (
+            <p role="alert" className="border-l-2 border-critical pl-4">
+              {deleteScans.error.message}. Check that the scanner is online and try again.
+            </p>
+          )}
+          {scans.data?.length ? (
+            <div className="relative overflow-x-auto">
+              <table className="w-full min-w-[720px] border-collapse text-left">
+                <thead className="text-[13px] text-ink-muted">
+                  <tr className="border-b border-rule-strong">
+                    <th className="py-2.5 pr-4 font-medium">Ran</th>
+                    <th className="py-2.5 pr-4 font-medium">Scanned</th>
+                    <th className="py-2.5 pr-4 font-medium">Shape</th>
+                    <th className="py-2.5 pr-4 text-right font-medium">Findings</th>
+                    <th className="py-2.5 pr-4 text-right font-medium">Critical</th>
+                    <th className="py-2.5 pr-4 text-right font-medium">Risk score</th>
+                    <th className="w-px py-2.5"><span className="sr-only">Delete</span></th>
+                  </tr>
+                </thead>
+                <tbody className="text-[15px]">
+                  {scans.data.map((s) => (
+                    <tr key={s.id} className="border-b border-rule">
+                      <td className="py-3.5 pr-4 whitespace-nowrap">
+                        <Link to={`/scans/${s.id}`} className="link font-semibold">
+                          {formatWhen(s.created_at)}
+                        </Link>
+                      </td>
+                      <td className="max-w-[22rem] truncate py-3.5 pr-4 font-mono text-[13px] text-ink-muted" title={s.targets.join(", ")}>
+                        {s.targets.join(", ")}
+                      </td>
+                      <td className="py-3.5 pr-4"><Shape scan={s} /></td>
+                      <td className="py-3.5 pr-4 text-right tabular-nums">{s.findings}</td>
+                      <td className="py-3.5 pr-4 text-right text-critical tabular-nums">{s.score.counts.critical}</td>
+                      <td className="py-3.5 pr-4 text-right whitespace-nowrap tabular-nums">
+                        <strong>{s.score.value}</strong> <span className="text-ink-muted">{s.score.grade}</span>
+                      </td>
+                      <td className="py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => deleteScans.mutate([s.id])}
+                          disabled={deleteScans.isPending}
+                          aria-label={`Delete the scan from ${formatWhen(s.created_at)}`}
+                          className="min-h-11 rounded-lg px-3 text-sm font-semibold text-ink-muted hover:bg-raise hover:text-critical disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-ink-muted">
+              {scans.isError
+                ? "Scan history is unavailable while the scanner is offline."
+                : "Nothing yet. Scans you run in this browser show up here, and only here."}
+            </p>
+          )}
+        </section>
+      </main>
+    </>
+  );
+}
+
+function Hero() {
+  const [word, replay] = useScramble("break");
+  return (
+    <div className="relative overflow-hidden border-b border-rule bg-ground">
+      <HeroGlow opacity={0.5} />
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-gradient-to-b from-transparent to-ground" />
+      <section className="relative mx-auto grid max-w-[1240px] items-center gap-10 px-4 pt-10 pb-10 [grid-template-columns:repeat(auto-fit,minmax(min(440px,100%),1fr))] sm:px-8 lg:pt-14 lg:pb-14">
+        <div className="grid gap-5">
+          <p className="text-sm text-ink-muted">Post-quantum readiness scanner for cloud, code and the wire</p>
+          <h1 className="font-display text-[clamp(34px,4.4vw,58px)] leading-[1.02] font-[750] tracking-[-0.035em] text-balance">
+            Find the cryptography a quantum computer will{" "}
+            <span onMouseEnter={replay} className="font-mono font-medium tracking-[-0.04em] whitespace-nowrap text-critical">
+              <span aria-hidden>{word}</span>
+              <span className="sr-only">break</span>
+            </span>
+            .
+          </h1>
+          <p className="max-w-[58ch] text-base leading-[1.55] text-pretty text-ink-muted">
+            QuantumTrace inventories every algorithm in your AWS exports, source code and packet
+            captures, rates each one Critical, Medium or Safe against quantum attack, and maps it to its
+            NIST replacement. Every result exports as a CycloneDX 1.6 CBOM.
           </p>
-        )}
+          <div>
+            <a className="btn btn-primary" href="#upload">Upload files to scan</a>
+          </div>
+        </div>
+        <WhyNow />
       </section>
     </div>
+  );
+}
+
+function WhyNow() {
+  return (
+    <figure className="m-0 grid gap-4 rounded-xl border border-rule bg-surface px-6 pt-5 pb-5">
+      <figcaption className="flex flex-wrap items-baseline justify-between gap-3">
+        <span className="font-semibold">Why now: harvest today, decrypt later</span>
+        <span className="text-[13px] text-ink-faint">NIST IR 8547</span>
+      </figcaption>
+      <div className="relative h-[124px]" role="img" aria-label="FIPS 203, 204 and 205 published in 2024. Traffic recorded today stays readable later. RSA, ECDSA and ECDH are deprecated in 2030 and disallowed in 2035.">
+        <div className="absolute inset-x-0 top-[62px] h-0.5 bg-rule-strong" />
+        <div className="absolute top-[62px] right-0 left-[18%] h-0.5 bg-gradient-to-r from-critical to-critical/25" />
+        <div className="absolute top-0 left-0 grid justify-items-start gap-1">
+          <span className="font-display text-[22px] leading-none font-bold">2024</span>
+          <span className="max-w-[12ch] text-xs leading-[1.2] text-ink-muted">FIPS 203, 204, 205 published</span>
+        </div>
+        <div className="absolute top-14 left-0 size-3.5 rounded-full bg-safe" />
+        <div className="absolute top-[54px] left-[18%] size-[18px] rounded-full bg-ink shadow-[0_0_0_6px_rgba(232,235,239,0.12)]" />
+        <div className="absolute top-[88px] left-[18%] grid -translate-x-1 gap-1">
+          <span className="text-[13px] font-semibold">Today</span>
+          <span className="max-w-[18ch] text-xs leading-[1.2] text-ink-muted max-sm:hidden">Traffic recorded now stays readable later</span>
+        </div>
+        <div className="absolute top-14 left-[62%] size-3.5 rotate-45 bg-critical" />
+        <div className="absolute top-0 left-[62%] grid -translate-x-1.5 gap-1">
+          <span className="font-display text-[22px] leading-none font-bold">2030</span>
+          <span className="max-w-[16ch] text-xs leading-[1.2] text-ink-muted">RSA, ECDSA, ECDH deprecated</span>
+        </div>
+        <div className="absolute top-[54px] right-0 size-[18px] rotate-45 bg-critical" />
+        <div className="absolute top-[88px] right-0 grid justify-items-end gap-1 text-right">
+          <span className="font-display text-[22px] leading-none font-bold">2035</span>
+          <span className="max-w-[14ch] text-xs leading-[1.2] text-ink-muted">Disallowed outright</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3 border-t border-rule pt-4">
+        {(
+          [
+            ["critical", "Asymmetric crypto Shor breaks: RSA, DSA, ECDSA, ECDH"],
+            ["medium", "Symmetric and hashes Grover weakens: AES-128, 3DES, SHA-1"],
+            ["safe", "Larger keys and post-quantum standards: AES-256, ML-KEM, ML-DSA"],
+          ] as const
+        ).map(([tier, text]) => (
+          <div key={tier} className="grid content-start gap-1.5">
+            <span className="flex items-center gap-2 font-semibold" style={{ color: TIER[tier].color }}>
+              <TierGlyph tier={tier} size={10} />
+              {TIER[tier].label}
+            </span>
+            <span className="text-[13px] leading-snug text-ink-muted">{text}</span>
+          </div>
+        ))}
+      </div>
+    </figure>
+  );
+}
+
+function Shape({ scan }: { scan: ScanSummary }) {
+  const c = scan.score.counts;
+  const parts = (["critical", "medium", "unknown", "safe"] as const).filter((t) => c[t] > 0);
+  return (
+    <span
+      className="flex h-3.5 w-40 gap-0.5"
+      role="img"
+      aria-label={parts.map((t) => `${c[t]} ${TIER[t].label.toLowerCase()}`).join(", ") || "No findings"}
+    >
+      {parts.map((t) => (
+        <span key={t} className="rounded-xs" style={{ flex: c[t], background: TIER[t].color }} />
+      ))}
+    </span>
   );
 }

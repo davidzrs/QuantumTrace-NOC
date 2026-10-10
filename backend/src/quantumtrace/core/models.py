@@ -169,6 +169,11 @@ class ScanResult(Model):
     scanners: list[str]
     findings: list[Finding]
     score: RiskScore
+    score_by_source: dict[SourceType, RiskScore] = Field(
+        default_factory=dict,
+        description="The same score over each source's findings alone, for reports filtered to "
+        "one source. Sources with no findings are absent.",
+    )
     limitations: list[ScanNote] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 

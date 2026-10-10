@@ -59,6 +59,9 @@ export function extOf(path: string): string {
   return dot > 0 ? name.slice(dot).toLowerCase() : "";
 }
 
+/** The kind of a file a scanner reads, or undefined when none does. */
+export const kindOf = (path: string): Kind | undefined => KIND_BY_EXT[extOf(path)];
+
 function ignoredDir(path: string): string | undefined {
   const parts = path.split("/").slice(0, -1);
   return parts.find((p) => IGNORED_DIRS.has(p));

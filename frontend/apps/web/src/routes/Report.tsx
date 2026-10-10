@@ -1,163 +1,169 @@
-import type { RiskTier, ScanResult } from "@quantumtrace/sdk";
-import { DebtStrip, TIER_META, TIER_ORDER, TierGlyph } from "@quantumtrace/ui";
+import type { RiskScore, RiskTier, ScanResult } from "@quantumtrace/sdk";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
+import { ExposurePanels } from "../components/ExposurePanels";
 import { FindingsTable } from "../components/FindingsTable";
+import { TickStrip } from "../components/TickStrip";
 import { api } from "../lib/api";
-import { downloadJson, formatDate } from "../lib/format";
-import { codeHotspots, commonDir, type Hotspot } from "../lib/hotspots";
-import { migrationPriorities } from "../lib/priorities";
+import { downloadJson, formatWhen, noteSource, plural, SOURCE_LABEL, SOURCES, type Source } from "../lib/format";
 
 export function Report() {
   const { scanId = "" } = useParams();
   const scan = useQuery({ queryKey: ["scan", scanId], queryFn: () => api.getScan(scanId) });
-  const [tier, setTier] = useState<RiskTier | undefined>();
-  const [query, setQuery] = useState("");
 
-  if (scan.isPending) return <p className="text-ink-muted">Loading report…</p>;
+  if (scan.isPending)
+    return (
+      <main className="mx-auto max-w-[1240px] px-4 pt-9 pb-24 sm:px-8">
+        <p className="qt-live text-ink-muted">Loading report…</p>
+      </main>
+    );
   if (scan.isError)
     return (
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
-        <h1 className="text-2xl font-bold">This report isn’t available</h1>
+      <main className="mx-auto grid max-w-[1240px] gap-4 px-4 pt-16 pb-24 sm:px-8">
+        <h1 className="font-display text-3xl font-bold tracking-[-0.02em]">This report isn’t available</h1>
         <p className="max-w-[60ch] text-ink-muted">
-          Reports are held in memory, so they disappear when the API restarts. Run the scan again
-          to get a fresh one.
+          Reports expire, and a scanner without storage forgets them when it restarts. Run the scan
+          again to get a fresh one.
         </p>
-        <Link to="/" className="font-semibold underline underline-offset-4">Start a new scan</Link>
-      </div>
+        <div>
+          <Link to="/#upload" className="btn btn-primary">Start a new scan</Link>
+        </div>
+      </main>
     );
 
-  return (
-    <ReportBody result={scan.data} tier={tier} onTierChange={setTier} query={query} onQueryChange={setQuery} />
-  );
+  return <ReportBody key={scan.data.id} result={scan.data} />;
 }
 
-function ReportBody({
-  result,
-  tier,
-  onTierChange,
-  query,
-  onQueryChange,
-}: {
-  result: ScanResult;
-  tier: RiskTier | undefined;
-  onTierChange: (t: RiskTier | undefined) => void;
-  query: string;
-  onQueryChange: (q: string) => void;
-}) {
-  const { findings, score } = result;
+function ReportBody({ result }: { result: ScanResult }) {
+  const [source, setSource] = useState<Source | undefined>();
+  const [tier, setTier] = useState<RiskTier | undefined>();
+  const [query, setQuery] = useState("");
+  const all = result.findings;
+  const findings = source ? all.filter((f) => f.asset.evidence.source_type === source) : all;
+  const bySource = (s: Source) => all.filter((f) => f.asset.evidence.source_type === s).length;
+  const count = (t: RiskTier) => findings.filter((f) => f.classification.tier === t).length;
   const total = findings.length;
-  const priorities = migrationPriorities(findings);
-  const hotspots = useMemo(() => codeHotspots(findings), [findings]);
-  const sections = [
-    { id: "summary", label: "Summary", show: true },
-    { id: "blind-spots", label: "Blind spots", show: result.limitations.length > 0 },
-    { id: "migrate", label: "Migrate first", show: priorities.length > 0 },
-    { id: "files", label: "Files", show: hotspots.length > 1 },
-    { id: "inventory", label: "Inventory", show: total > 0 },
-  ].filter((x) => x.show);
-  const active = useActiveSection(sections.map((x) => x.id));
+  const [c, m, u, s] = [count("critical"), count("medium"), count("unknown"), count("safe")];
+  const internetCritical = findings.filter(
+    (f) => f.classification.tier === "critical" && f.asset.exposure === "internet",
+  ).length;
+  const notes = result.limitations.filter((n) => !source || (noteSource(n.scanner) ?? source) === source);
+  const noCapture = bySource("network") === 0;
 
   const showFile = (path: string) => {
-    onTierChange(undefined);
-    onQueryChange(path);
-    document.getElementById("inventory")?.scrollIntoView({ behavior: smoothScroll() });
+    setSource(undefined);
+    setTier(undefined);
+    setQuery(path);
+    document.getElementById("fixes")?.scrollIntoView({ behavior: smoothScroll() });
   };
-
   const exportCbom = async () =>
     downloadJson(`quantumtrace-cbom-${result.id.slice(0, 8)}.cdx.json`, await api.getCbom(result.id));
 
   return (
-    <article className="grid grid-cols-[minmax(0,1fr)] gap-14">
-      <nav
-        aria-label="Report sections"
-        className="sticky top-0 z-10 -mx-4 -mb-6 flex items-center justify-between gap-4 border-b border-rule bg-ground/95 px-4 py-2 backdrop-blur-sm sm:-mx-8 sm:px-8"
-      >
-        <ul className="flex min-w-0 gap-1 overflow-x-auto text-sm [scrollbar-width:none]">
-          {sections.map((x) => (
-            <li key={x.id}>
-              <a
-                href={`#${x.id}`}
-                aria-current={active === x.id ? "location" : undefined}
-                className={`block px-2 py-1.5 font-semibold whitespace-nowrap ${
-                  active === x.id ? "text-ink shadow-[inset_0_-2px_var(--qt-ink)]" : "text-ink-muted hover:text-ink"
-                }`}
+    <main className="mx-auto grid max-w-[1240px] grid-cols-[minmax(0,1fr)] gap-10 px-4 pt-5 pb-20 sm:px-8">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
+        <div className="grid gap-3">
+          <p className="flex min-w-0 flex-wrap items-center gap-2 text-[13px] text-ink-muted">
+            <Link to="/#history" className="link text-ink-muted">All scans</Link>
+            <span aria-hidden>/</span>
+            <span>{formatWhen(result.created_at)}</span>
+            <span aria-hidden>·</span>
+            <span className="truncate font-mono text-xs" title={result.targets.join(", ")}>
+              {result.targets.join(", ")}
+            </span>
+          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {all.length > 0 ? (
+              <div role="group" aria-label="Show findings from" className="seg">
+                <button type="button" className="seg-btn" aria-pressed={!source} onClick={() => setSource(undefined)}>
+                  All sources<span className="font-mono text-xs opacity-75">{all.length}</span>
+                </button>
+                {SOURCES.map((s) => {
+                  const n = bySource(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      className="seg-btn"
+                      aria-pressed={source === s}
+                      disabled={n === 0}
+                      title={n === 0 ? `No ${SOURCE_LABEL[s].toLowerCase()} in this scan` : undefined}
+                      onClick={() => setSource(s)}
+                    >
+                      {SOURCE_LABEL[s]}
+                      <span className="font-mono text-xs opacity-75">{n || "–"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <span />
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => downloadJson(`quantumtrace-report-${result.id.slice(0, 8)}.json`, result)}
               >
-                {x.label}
-              </a>
-            </li>
-          ))}
-        </ul>
-        <div className="flex shrink-0 gap-2 text-sm">
-          <button
-            type="button"
-            onClick={() => downloadJson(`quantumtrace-report-${result.id.slice(0, 8)}.json`, result)}
-            className="border border-rule-strong px-3 py-1.5 font-semibold text-ink hover:border-ink max-sm:hidden"
-          >
-            Download report
-          </button>
-          <button
-            type="button"
-            onClick={() => void exportCbom()}
-            className="bg-ink px-3 py-1.5 font-semibold text-ground hover:opacity-90"
-          >
-            Export CBOM
-          </button>
-        </div>
-      </nav>
-
-      <header id="summary" className="grid scroll-mt-16 grid-cols-[minmax(0,1fr)] gap-6">
-        <p className="text-sm text-ink-muted">
-          <Link to="/" className="underline decoration-rule-strong underline-offset-4 hover:text-ink">
-            All scans
-          </Link>
-          <span className="mx-2" aria-hidden>/</span>
-          Scanned <span className="font-mono text-ink">{result.targets.join(", ")}</span> on{" "}
-          {formatDate(result.created_at)}
-        </p>
-
-        {total === 0 ? (
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
-            <h1 className="text-3xl font-extrabold tracking-tight">No cryptography found.</h1>
-            <p className="max-w-[60ch] text-ink-muted">
-              None of the scanners recognised anything in these files. QuantumTrace reads AWS
-              posture exports (JSON), Python, Java and Go source, and .pcap/.pcapng captures.
-            </p>
-          </div>
-        ) : (
-          <>
-            <h1 className="max-w-[22ch] text-4xl leading-[1.08] font-extrabold tracking-[-0.025em] text-balance sm:text-[3.5rem]">
-              {score.counts.critical === 0
-                ? `None of these ${total} assets is breakable by Shor’s algorithm.`
-                : `${score.counts.critical} of ${total} cryptographic assets break under Shor’s algorithm.`}
-            </h1>
-            <p className="max-w-[64ch] text-lg leading-relaxed text-ink-muted">
-              {score.counts.medium > 0 && `${score.counts.medium} more are weakened by Grover’s algorithm. `}
-              Quantum risk score{" "}
-              <strong className="text-ink">{score.value}</strong> out of 100, grade{" "}
-              <strong className="text-ink">{score.grade}</strong>. Taller ticks are internet-facing:
-              traffic there can be recorded today and decrypted later.
-            </p>
-            <div className="qt-strip-reveal">
-              <DebtStrip
-                findings={findings}
-                focus={tier}
-                onSelectTier={(t) => onTierChange(tier === t ? undefined : t)}
-                height={72}
-              />
+                Download report
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => void exportCbom()}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 3v12" />
+                  <path d="m7 10 5 5 5-5" />
+                  <path d="M5 21h14" />
+                </svg>
+                Export CBOM
+              </button>
             </div>
-            <ul className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-              {TIER_ORDER.filter((t) => score.counts[t] > 0).map((t) => (
-                <li key={t} className="flex items-center gap-2">
-                  <TierGlyph tier={t} />
-                  <span className="font-semibold tabular-nums">{score.counts[t]}</span>
-                  <span className="text-ink-muted">{lowerFirst(TIER_META[t].threat)}</span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+          </div>
+        </div>
+
+        <section aria-labelledby="hero" className="flex flex-wrap items-end gap-x-12 gap-y-5">
+          <div className="grid min-w-0 flex-[2_1_560px] gap-3">
+            {all.length === 0 ? (
+              <>
+                <h1 id="hero" className="font-display text-[clamp(30px,3.4vw,46px)] leading-[1.05] font-[750] tracking-[-0.035em]">
+                  No cryptography found.
+                </h1>
+                <p className="max-w-[64ch] text-base leading-[1.55] text-ink-muted">
+                  None of the scanners recognised anything in these files. QuantumTrace reads AWS posture
+                  exports (JSON), Python, Java and Go source, and .pcap or .pcapng captures.
+                </p>
+              </>
+            ) : (
+              <>
+                <h1
+                  id="hero"
+                  className="max-w-[22ch] font-display text-[clamp(30px,3.2vw,44px)] leading-[1.05] font-[750] tracking-[-0.035em] text-balance"
+                >
+                  {c === 0 ? (
+                    `None of these ${plural(total, "asset")} is breakable by Shor’s algorithm.`
+                  ) : (
+                    <>
+                      <span className="text-critical">{c}</span> of {total} cryptographic assets are critical.
+                    </>
+                  )}
+                </h1>
+                <p className="qt-fade max-w-[72ch] text-base leading-[1.5] text-pretty text-ink-muted">
+                  {heroSub({ c, m, u, s, internetCritical })}
+                </p>
+              </>
+            )}
+          </div>
+          {all.length > 0 && (
+            // The API scores each source on its own. Reports stored before it did fall back to
+            // the whole scan's score, and say so.
+            <ScorePanel
+              score={(source && result.score_by_source[source]) || result.score}
+              scope={
+                !source ? "All sources" : result.score_by_source[source] ? `${SOURCE_LABEL[source]} only` : "Whole scan, all sources"
+              }
+            />
+          )}
+        </section>
+
         {result.errors.length > 0 && (
           <div role="alert" className="border-l-2 border-critical pl-4 text-sm">
             <p className="font-semibold">Some inputs couldn’t be scanned</p>
@@ -166,156 +172,167 @@ function ReportBody({
             </ul>
           </div>
         )}
-      </header>
 
-      {result.limitations.length > 0 && (
-        <section id="blind-spots" aria-labelledby="blind-spots-title" className="grid scroll-mt-16 grid-cols-[minmax(0,1fr)] gap-3">
-          <h2 id="blind-spots-title" className="text-xl font-bold">What this scan couldn’t see</h2>
-          <ul className="grid max-w-[72ch] gap-2 border-l-2 border-rule-strong pl-4 text-ink-muted">
-            {result.limitations.map((n) => (
-              <li key={n.message}>{n.message}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {priorities.length > 0 && (
-        <section id="migrate" aria-labelledby="migrate-title" className="grid scroll-mt-16 grid-cols-[minmax(0,1fr)] gap-4">
-          <h2 id="migrate-title" className="text-xl font-bold">Migrate these first</h2>
-          <p className="-mt-2 max-w-[64ch] text-ink-muted">
-            Ranked by what is already broken, then by internet exposure, then by how often it appears.
-          </p>
-          <ol className="divide-y divide-rule border-y border-rule">
-            {priorities.map((p, i) => (
-              <li key={p.ruleId} className="grid gap-1 py-4 sm:grid-cols-[2rem_12rem_1fr_auto] sm:items-baseline sm:gap-6">
-                <span className="text-sm text-ink-faint tabular-nums">{i + 1}</span>
-                <span className="text-lg font-bold">{p.name}</span>
-                <span className="max-w-[60ch]">
-                  {p.replacement ? <>Replace with {p.replacement}</> : "No drop-in replacement; redesign required"}
-                  {p.nistReference && <span className="block text-sm text-ink-muted">{p.nistReference}</span>}
-                </span>
-                <span className="text-sm whitespace-nowrap text-ink-muted tabular-nums">
-                  {p.count} {p.count === 1 ? "place" : "places"}
-                  {p.internetFacing > 0 && <>, {p.internetFacing} internet-facing</>}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      {hotspots.length > 1 && <FileHotspots hotspots={hotspots} onSelect={showFile} />}
+        {total > 0 && (
+          <TickStrip key={source ?? "all"} findings={findings} focus={tier} onSelectTier={(t) => setTier(tier === t ? undefined : t)} />
+        )}
+      </div>
 
       {total > 0 && (
-        <section id="inventory" aria-labelledby="inventory-title" className="grid scroll-mt-16 grid-cols-[minmax(0,1fr)] gap-4">
-          <h2 id="inventory-title" className="text-xl font-bold">Full inventory</h2>
+        <section id="fixes" aria-labelledby="fixes-title" className="qt-fade scroll-mt-16">
           <FindingsTable
+            scanId={result.id}
             findings={findings}
             tier={tier}
-            onTierChange={onTierChange}
+            onTierChange={setTier}
             query={query}
-            onQueryChange={onQueryChange}
+            onQueryChange={setQuery}
           />
         </section>
       )}
-    </article>
+
+      {total > 0 && <ExposurePanels all={all} findings={findings} source={source} onSelectFile={showFile} />}
+
+      {(notes.length > 0 || (noCapture && all.length > 0 && source !== "code")) && (
+        <BlindSpots notes={notes} noCapture={noCapture && all.length > 0 && source !== "code"} />
+      )}
+    </main>
   );
 }
 
-const HOTSPOTS_SHOWN = 8;
-const TICKS_SHOWN = 24;
+function heroSub({ c, m, u, s, internetCritical }: Record<"c" | "m" | "u" | "s" | "internetCritical", number>): string {
+  const rest = [
+    m ? `${m} ${c ? "more " : ""}${m === 1 ? "is" : "are"} medium, weakened by Grover’s` : "",
+    u ? `${u} ${u === 1 ? "is" : "are"} unclassified` : "",
+    s ? `${s} ${s === 1 ? "is" : "are"} safe` : "",
+  ].filter(Boolean);
+  const list = rest.length > 1 ? `${rest.slice(0, -1).join(", ")} and ${rest.at(-1)}` : (rest[0] ?? "");
+  const lead = c ? "Shor’s algorithm breaks them outright." : "";
+  const exposure = c
+    ? internetCritical
+      ? `${internetCritical} of the critical ones sit on internet-facing endpoints, where traffic can be recorded today and decrypted later.`
+      : "None of them faces the internet directly."
+    : "";
+  return [lead, list && `${list.charAt(0).toUpperCase()}${list.slice(1)}.`, exposure].filter(Boolean).join(" ");
+}
 
-function FileHotspots({ hotspots, onSelect }: { hotspots: Hotspot[]; onSelect: (path: string) => void }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? hotspots : hotspots.slice(0, HOTSPOTS_SHOWN);
-  const base = commonDir(hotspots.map((h) => h.path));
+function ScorePanel({ score, scope }: { score: RiskScore; scope: string }) {
+  const grades = ["A", "B", "C", "D", "F"];
+  const at = Math.min(100, Math.max(0, score.value));
   return (
-    <section id="files" aria-labelledby="files-title" className="grid scroll-mt-16 grid-cols-[minmax(0,1fr)] gap-4">
-      <h2 id="files-title" className="text-xl font-bold">Files to fix first</h2>
-      <p className="-mt-2 max-w-[64ch] text-ink-muted">
-        {hotspots.length} source files{base && <> in <span className="font-mono text-ink">{base}</span></>} use
-        cryptography. Ranked by calls Shor’s algorithm breaks, then
-        by calls Grover’s weakens. Pick a file to see its findings.
-      </p>
-      <ol className="divide-y divide-rule border-y border-rule">
-        {shown.map((h) => {
-          const rel = h.path.slice(base.length);
-          const slash = rel.lastIndexOf("/");
-          return (
-            <li key={h.path}>
-              <button
-                type="button"
-                onClick={() => onSelect(h.path)}
-                className="grid w-full gap-x-6 gap-y-1.5 py-3 text-left hover:bg-surface sm:grid-cols-[minmax(0,1fr)_8rem_minmax(0,10rem)] sm:items-center"
-              >
-                <span className="min-w-0 truncate font-mono text-sm" title={h.path}>
-                  <span className="text-ink-muted">{rel.slice(0, slash + 1)}</span>
-                  <span className="font-medium">{rel.slice(slash + 1)}</span>
-                </span>
-                <span className="flex gap-4 text-sm tabular-nums">
-                  {(["critical", "medium"] as const).map((t) =>
-                    h.counts[t] ? (
-                      <span key={t} className="flex items-center gap-1.5" title={TIER_META[t].threat}>
-                        <TierGlyph tier={t} />
-                        {h.counts[t]} <span className="sr-only">{TIER_META[t].label}</span>
-                      </span>
-                    ) : null,
-                  )}
-                  {!h.counts.critical && !h.counts.medium && <span className="text-ink-muted">{h.total} resilient or unclassified</span>}
-                </span>
-                <span className="flex h-4 items-stretch gap-0.5 max-sm:hidden" aria-hidden>
-                  {h.ticks.slice(0, TICKS_SHOWN).map((t, i) => (
-                    <span key={i} className="w-1.5" style={{ background: TIER_META[t].color }} />
-                  ))}
-                  {h.ticks.length > TICKS_SHOWN && (
-                    <span className="self-center pl-1 text-xs text-ink-muted">+{h.ticks.length - TICKS_SHOWN}</span>
-                  )}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-      {hotspots.length > shown.length && (
-        <button
-          type="button"
-          onClick={() => setAll(true)}
-          className="justify-self-start font-semibold underline decoration-rule-strong underline-offset-4 hover:decoration-ink"
+    <div className="panel qt-fade flex-[1_1_320px] gap-2.5 px-5 py-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-semibold">Quantum risk score</span>
+        <span className="text-[13px] text-ink-faint">{scope}</span>
+      </div>
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+        <div className="flex items-baseline gap-2.5">
+          <span className="font-display text-[44px] leading-none font-[750] tracking-[-0.03em]">{score.value.toFixed(1)}</span>
+          <span className="text-sm whitespace-nowrap text-ink-muted">
+            of 100 · grade <strong className="text-lg text-ink">{score.grade}</strong>
+          </span>
+        </div>
+        <div className="relative min-w-[150px] flex-1 pt-2.5" role="img" aria-label={`Score ${score.value.toFixed(1)} sits in grade ${score.grade}`}>
+          <div className="absolute top-0 h-[24px] w-0.5 -translate-x-px bg-ink transition-[left] duration-300 ease-out" style={{ left: `${at}%` }} />
+          <div className="grid grid-cols-5 gap-[3px]">
+            {grades.map((g) => (
+              <span key={g} className="h-2 rounded-xs" style={{ background: g === score.grade ? "var(--qt-ink-muted)" : "var(--qt-rule-strong)" }} />
+            ))}
+          </div>
+          <div className="mt-1.5 grid grid-cols-5 gap-[3px] font-mono text-[11px]">
+            {grades.map((g) => (
+              <span key={g} style={{ color: g === score.grade ? "var(--qt-ink)" : "var(--qt-ink-faint)" }}>{g}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <p className="text-xs text-ink-faint">0 is quantum-ready, 100 is every asset broken and exposed.</p>
+    </div>
+  );
+}
+
+function BlindSpots({ notes, noCapture }: { notes: ScanResult["limitations"]; noCapture: boolean }) {
+  // The list scrolls inside the height of the explanation beside it, instead of trailing on.
+  const list = useRef<HTMLUListElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    // Observing starts with one callback, so this also re-measures when a source tab swaps the notes.
+    const observer = new ResizeObserver(() => setOverflows(el.scrollHeight > el.clientHeight + 1));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [notes, noCapture]);
+  const total = notes.length + (noCapture ? 1 : 0);
+  const bySource = SOURCES.map((s) => ({ s, n: notes.filter((n) => noteSource(n.scanner) === s).length })).filter((x) => x.n > 0);
+  const general = notes.filter((n) => !noteSource(n.scanner)).length;
+
+  return (
+    <section aria-labelledby="blind-title" className="grid gap-x-12 gap-y-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <div className="grid content-start gap-3 lg:min-h-[220px]">
+        <h2 id="blind-title" className="font-display text-[22px] font-bold tracking-[-0.02em]">
+          What this scan couldn’t see
+        </h2>
+        <p className="text-ink-muted">
+          Stated so nobody mistakes silence for safety. These also travel in the CBOM metadata.
+        </p>
+        <dl className="mt-1 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 border-t border-rule pt-3 text-sm">
+          {bySource.map(({ s, n }) => (
+            <Fragment key={s}>
+              <dt className="text-ink-muted">{SOURCE_LABEL[s]}</dt>
+              <dd className="tabular-nums">{plural(n, "blind spot")}</dd>
+            </Fragment>
+          ))}
+          {general > 0 && (
+            <>
+              <dt className="text-ink-muted">Whole scan</dt>
+              <dd className="tabular-nums">{plural(general, "blind spot")}</dd>
+            </>
+          )}
+          {noCapture && (
+            <>
+              <dt className="text-ink-muted">Network capture</dt>
+              <dd>Not in this scan</dd>
+            </>
+          )}
+        </dl>
+        {overflows && <p className="text-[13px] text-ink-faint">Scroll the list for all {total}.</p>}
+      </div>
+      <div className="relative">
+        <ul
+          ref={list}
+          tabIndex={overflows ? 0 : undefined}
+          aria-label="Blind spots"
+          className="grid max-h-[420px] content-start gap-2.5 overflow-y-auto lg:absolute lg:inset-0 lg:max-h-none"
         >
-          Show all {hotspots.length} files
-        </button>
-      )}
+          {notes.map((n) => (
+            <BlindSpot key={n.message}>{n.message}</BlindSpot>
+          ))}
+          {noCapture && (
+            <BlindSpot>
+              No packet capture in this scan, so nothing here shows what clients actually negotiate or how
+              much traffic is already being recorded with these keys. That is the harvest-now,
+              decrypt-later exposure, and only the wire can measure it.{" "}
+              <Link to="/#upload" className="link">Add a packet capture</Link>
+            </BlindSpot>
+          )}
+        </ul>
+      </div>
     </section>
   );
 }
 
-/** The section the reader is in: the last one whose top has passed under the section bar. */
-function useActiveSection(ids: string[]): string | undefined {
-  const [active, setActive] = useState<string | undefined>(ids[0]);
-  const key = ids.join(",");
-  useEffect(() => {
-    const list = key.split(",");
-    let frame = 0;
-    const update = () => {
-      frame = 0;
-      const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
-      const passed = list.filter((id) => (document.getElementById(id)?.getBoundingClientRect().top ?? Infinity) <= 96);
-      setActive(atEnd ? list[list.length - 1] : (passed[passed.length - 1] ?? list[0]));
-    };
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(update);
-    };
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      cancelAnimationFrame(frame);
-    };
-  }, [key]);
-  return active;
+function BlindSpot({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex gap-3 rounded-[10px] border border-rule bg-surface px-4 py-3.5 text-sm leading-normal">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--qt-ink-muted)" strokeWidth="1.8" strokeLinecap="round" aria-hidden className="mt-[3px] flex-none">
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+        <path d="M4 4l16 16" />
+      </svg>
+      <span>{children}</span>
+    </li>
+  );
 }
 
 const smoothScroll = (): ScrollBehavior =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-
-const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);

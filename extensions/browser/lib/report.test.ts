@@ -49,6 +49,7 @@ function result(findings: Finding[]): ScanResult {
       grade: "A",
       counts: { critical: count("critical"), medium: count("medium"), safe: count("safe"), unknown: count("unknown") },
     },
+    score_by_source: {},
     limitations: [],
     errors: [],
   };

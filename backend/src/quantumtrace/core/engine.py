@@ -10,7 +10,7 @@ from pathlib import Path
 
 from quantumtrace.core.classifier import Classifier, default_classifier
 from quantumtrace.core.models import CryptoAsset, Finding, ScanNote, ScanResult
-from quantumtrace.core.scoring import score
+from quantumtrace.core.scoring import score, score_by_source
 from quantumtrace.scanners import Scanner, registry
 from quantumtrace.scanners.network import probe
 
@@ -61,6 +61,7 @@ def run_scan(
         scanners=used,
         findings=findings,
         score=score(findings),
+        score_by_source=score_by_source(findings),
         limitations=notes,
         errors=errors,
     )
@@ -85,5 +86,6 @@ def run_probe(
         scanners=[probe.SCANNER],
         findings=findings,
         score=score(findings),
+        score_by_source=score_by_source(findings),
         limitations=notes,
     )

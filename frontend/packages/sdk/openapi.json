@@ -1188,6 +1188,17 @@
           "score": {
             "$ref": "#/components/schemas/RiskScore"
           },
+          "score_by_source": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RiskScore"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SourceType"
+            },
+            "type": "object",
+            "title": "Score By Source",
+            "description": "The same score over each source's findings alone, for reports filtered to one source. Sources with no findings are absent."
+          },
           "limitations": {
             "items": {
               "$ref": "#/components/schemas/ScanNote"
@@ -1211,6 +1222,7 @@
           "scanners",
           "findings",
           "score",
+          "score_by_source",
           "limitations",
           "errors"
         ],

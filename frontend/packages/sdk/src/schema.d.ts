@@ -406,6 +406,13 @@ export interface components {
             /** Findings */
             findings: components["schemas"]["Finding"][];
             score: components["schemas"]["RiskScore"];
+            /**
+             * Score By Source
+             * @description The same score over each source's findings alone, for reports filtered to one source. Sources with no findings are absent.
+             */
+            score_by_source: {
+                [key: string]: components["schemas"]["RiskScore"];
+            };
             /** Limitations */
             limitations: components["schemas"]["ScanNote"][];
             /** Errors */
