@@ -44,6 +44,7 @@ uv run quantumtrace probe github.com                                   # live TL
 | Source code (Python, Java, Go) | working: 39 findings with file:line evidence, misuse flags (ECB, hard-coded keys, weak RNG, hand-rolled KDF) |
 | Network capture (TLS on any port incl. STARTTLS, SSH, cleartext) | working: 473 findings over 135 sessions, hybrid ML-KEM detected |
 | Live TLS probing (`quantumtrace probe <host>`, `POST /api/v1/probes/tls`) | working: negotiated version, group (hybrid ML-KEM or classical), cipher, TLS 1.2 downgrade path, leaf certificate key |
+| Public GitHub repository by URL (`POST /api/v1/scans/github`, web app) | working: pinned to one commit, branch/tag/folder links, each code finding links to its line on GitHub |
 
 ## Architecture
 

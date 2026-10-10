@@ -35,7 +35,7 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | `backend/src/quantumtrace/rules/` | `algorithms.yaml`, `aws_elb_policies.yaml`, `tls.py` (cipher-suite decomposition) |
 | `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe) |
 | `backend/src/quantumtrace/cbom/` | CycloneDX 1.6 export |
-| `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`; scans in memory or Upstash Redis (`store/`) |
+| `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`; scans in memory or Upstash Redis (`store/`); `github.py` fetches public repos for `/scans/github` (refs from git's `info/refs`, zip from codeload, no GitHub API rate limit) |
 | `backend/tests/` | golden tests against `samples/` for every vector |
 | `frontend/apps/web/` | React 19 + Vite + Tailwind v4 dashboard (deployed to Vercel) |
 | `frontend/packages/sdk/` | generated OpenAPI types + typed client |
@@ -156,6 +156,11 @@ Both halves run on Vercel as two projects from this repo (see the `deploy` skill
   sent as `name.gz`) and checks the unpacked total up front. Zip entries under `.git`,
   `node_modules` and other ignored folders are not unpacked. For bigger captures, run locally
   or use the Docker image (`backend/Dockerfile`, `fly.toml`).
+- **GitHub scans.** `/scans/github` downloads the repository server-side, so Vercel's request
+  limit doesn't apply. `max_repo_mb` (also in `/health`; 150 on Vercel, 1000 elsewhere) caps the
+  zip download, and only scannable files are unpacked, against `max_unpacked_mb`. Public repos
+  only: private ones answer 401 like missing ones. Don't add a server-side GitHub token without
+  per-user auth, or any caller could read every private repo that token can see.
 
 ## Skills
 

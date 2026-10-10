@@ -90,6 +90,12 @@ export function createClient({ baseUrl, apiKey, fetch: fetchImpl }: ClientOption
     probeTls: (host: string, port = 443) =>
       unwrap(http.POST("/api/v1/probes/tls", { body: { host, port } })),
     /**
+     * Scan a public GitHub repository by URL: the API downloads it, so nothing is uploaded.
+     * Also takes a branch, tag, commit or folder (`https://github.com/owner/repo/tree/main/src`).
+     */
+    scanGithub: (url: string) =>
+      unwrap(http.POST("/api/v1/scans/github", { body: { url } })),
+    /**
      * Upload files, folders or .zip archives. Pass `{ file, path }` to keep a file's place in a
      * folder (`repo/src/auth.py`): evidence then points at that path. The API takes at most
      * 1000 files per scan. Uses raw fetch because of multipart bodies.
