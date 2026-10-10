@@ -428,6 +428,8 @@ function exposureNote(f: Finding): string {
   if (f.asset.exposure === "unknown" && f.asset.evidence.source_type === "network") {
     return "The capture doesn’t show whether this server faces the internet.";
   }
+  // a signature or a symmetric cipher can't be harvested now and read later, only reached
+  if (f.asset.exposure === "internet" && !f.classification.hndl) return "Reachable from the internet.";
   return EXPOSURE_NOTE[f.asset.exposure] ?? "";
 }
 
