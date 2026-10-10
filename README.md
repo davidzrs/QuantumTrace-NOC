@@ -3,7 +3,7 @@
 Find the cryptography a quantum computer will break. QuantumTrace scans cloud exports, source
 code and network captures. It classifies every primitive as **critical** (Shor), **weakened**
 (Grover) or **resilient**, scores the estate, and exports a **CycloneDX 1.6 CBOM** mapped to NIST
-FIPS 203/204/205.
+FIPS 203/204/205
 
 Built for the JunctionX Lisbon 2026 "Inspiring Solutions" challenge (brief in the PDF at the
 repo root; data in `samples/`).
