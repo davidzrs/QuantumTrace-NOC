@@ -1,9 +1,10 @@
 # QuantumTrace task runner: bridges uv (backend) and pnpm (frontend).
 .PHONY: install dev api web test lint format gen-sdk scan demo docker-build
 
-install:            ## Install backend + frontend dependencies
+install:            ## Install backend + frontend dependencies and the git hooks
 	cd backend && uv sync
 	pnpm install
+	git config core.hooksPath .githooks
 
 api:                ## Run the API with reload on :8000
 	cd backend && uv run uvicorn quantumtrace.api.app:app --reload --port 8000

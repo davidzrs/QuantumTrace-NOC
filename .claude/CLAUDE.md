@@ -91,6 +91,9 @@ cd backend && uv run quantumtrace scan ../samples/cloud-posture -f cbom -o out.c
 - TypeScript: strict, `noUncheckedIndexedAccess`. Talk to the API only through `@quantumtrace/sdk`.
 - API versioning: everything lives under `/api/v1`. Breaking changes need `/api/v2`, because
   extensions ship on their own release cycle.
+- No AI attribution in commits or PRs: no `Co-Authored-By: Claude` trailer and no "Generated with
+  Claude Code" footer. `.githooks/commit-msg` strips both (`make install` enables it), but a
+  GitHub squash merge copies the PR body, so keep it out of PR descriptions too.
 - CI (`.github/workflows/ci.yml`) has two jobs: backend (ruff, mypy, pytest) and frontend
   (lint, types, tests, build, SDK drift). Run `make lint && make test` before pushing.
 

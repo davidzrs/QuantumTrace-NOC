@@ -1,0 +1,12 @@
+#!/bin/sh
+# Strip AI attribution trailers from commit messages.
+#
+# Claude Code's `attribution` setting only stops the footer being appended for it; an
+# agent can still type the trailer into the message, and a squash merge on GitHub then
+# carries it onto main.
+
+msg_file=$1
+tmp=$(mktemp) || exit 1
+grep -viE '^(co-authored-by:.*(claude|anthropic\.com)|.*generated with \[?claude code)' "$msg_file" >"$tmp"
+cat "$tmp" >"$msg_file"
+rm -f "$tmp"
