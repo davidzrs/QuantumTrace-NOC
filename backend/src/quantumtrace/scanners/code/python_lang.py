@@ -119,7 +119,7 @@ def scan(src: SourceFile) -> None:
         for m in re.finditer(
             r"\brandom\.(getrandbits|randint|randbytes|random|choice|choices)\s*\(", text
         ):
-            src.emit(m.start(), m.group(0).rstrip("( "), "non-csprng", "rng")
+            src.emit_weak_rng(m.start(), m.group(0).rstrip("( "))
 
 
 def _cipher(

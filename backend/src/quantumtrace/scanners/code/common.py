@@ -6,6 +6,7 @@ import bisect
 import re
 import textwrap
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 
 from quantumtrace.core.classifier import normalise
@@ -26,6 +27,42 @@ SNIPPET_WIDTH = 200
 # not the library, unless the dotted chain starts at one of these package roots.
 PACKAGE_ROOTS = {"cryptography", "Crypto", "Cryptodome", "javax", "java", "golang", "crypto"}
 _DEFINITION = re.compile(r"(?:\bdef|\bfunc|\bclass|\binterface|\bstruct)\s+$")
+_CONFIDENCE_ORDER = (Confidence.LOW, Confidence.MEDIUM, Confidence.HIGH)
+
+# A weak RNG is a real risk when its output is a secret. One of these words inside an
+# identifier next to the call (session_token, apiKey, nonceBytes) is the clue.
+SECRET_WORDS = frozenset({
+    "token", "key", "secret", "password", "passwd", "pwd", "nonce", "salt", "otp", "session",
+    "iv", "seed", "csrf", "auth",
+})  # fmt: skip
+_IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
+# snake_case and camelCase words: session_token -> session, token; getIVBytes -> get, IV, Bytes
+_NAME_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+_PY_DEF = re.compile(r"\s*(?:async\s+)?def\s+(\w+)")
+_GO_FUNC = re.compile(r"\bfunc\s*(?:\([^)]*\)\s*)?(\w+)\s*(?:\[[^\]]*\]\s*)?\(")
+_JAVA_METHOD = re.compile(r"(\w+)\s*\([^()]*\)\s*(?:throws\s+[\w.,\s]+)?$")
+_JAVA_NOT_METHODS = {"if", "for", "while", "switch", "catch", "synchronized", "try", "return"}
+
+
+def is_secret_name(identifier: str) -> bool:
+    """Whether a whole word of the identifier names a secret: `api_keys` does, `monkey` and
+    `private` don't."""
+    words = (w.lower() for w in _NAME_WORD.findall(identifier))
+    return any(w in SECRET_WORDS or w.removesuffix("s") in SECRET_WORDS for w in words)
+
+
+def _go_function(header: str) -> str | None:
+    """`func (s *Server) issueOTP() int` -> issueOTP; a func literal has no name."""
+    m = _GO_FUNC.search(header)
+    return m.group(1) if m else None
+
+
+def _java_method(header: str) -> str | None:
+    """`public static byte[] sessionToken()` -> sessionToken; not `if (...)` or `new X() {`."""
+    m = _JAVA_METHOD.search(header)
+    if m is None or m.group(1) in _JAVA_NOT_METHODS:
+        return None
+    return None if re.search(r"\bnew\s+[\w.<>]*$", header[: m.start()]) else m.group(1)
 
 
 @dataclass
@@ -95,6 +132,7 @@ class SourceFile:
             if all(e.line != line for e in existing.all_evidence):
                 existing.more_evidence.append(evidence)
             existing.flags = sorted({*existing.flags, *flags})
+            existing.confidence = max(existing.confidence, confidence, key=_CONFIDENCE_ORDER.index)
             return
         self._assets[key] = CryptoAsset(
             observed=observed,
@@ -107,6 +145,106 @@ class SourceFile:
             flags=sorted(set(flags)),
             evidence=evidence,
         )
+
+    def emit_weak_rng(self, pos: int, observed: str) -> None:
+        """A non-cryptographic RNG call. Always reported, but high confidence only when a
+        secret-looking name sits next to it; otherwise it may just pick a colour."""
+        hint = self.secret_hint(pos)
+        self.emit(pos, observed, "non-csprng", "rng",
+                  flags=["secret-context"] if hint else [],
+                  context={"secret_hint": hint} if hint else None,
+                  confidence=Confidence.HIGH if hint else Confidence.LOW)  # fmt: skip
+
+    def secret_hint(self, pos: int) -> str | None:
+        """The first identifier that marks the value made at `pos` as a secret, looking at the
+        call's line, then the variable its statement assigns, then the enclosing function."""
+        line = self.line_of(pos)
+        starts = self._line_starts
+        line_end = starts[line] - 1 if line < len(starts) else len(self._code)
+        names = _IDENTIFIER.findall(self._code, starts[line - 1], line_end)
+        names += self._assigned_names(self._statement_start(line), pos)
+        if (function := self._enclosing_function(pos)) is not None:
+            names.append(function)
+        return next((n for n in names if is_secret_name(n)), None)
+
+    @cached_property
+    def _code(self) -> str:
+        """`text` with string literals blanked too (newlines kept): only code is left."""
+        out = list(self.text)
+        for start, end in self._strings:
+            out[start:end] = [c if c == "\n" else " " for c in out[start:end]]
+        return "".join(out)
+
+    @cached_property
+    def _line_starts(self) -> list[int]:
+        return [0, *(m.end() for m in re.finditer("\n", self._code))]
+
+    @cached_property
+    def _line_depths(self) -> list[int]:
+        """How many brackets are still open at the start of each line. Braces only count in
+        Python (dicts, sets); in Java and Go they open blocks, which end statements."""
+        opening, closing = ("([{", ")]}") if self.language == "python" else ("([", ")]")
+        depths, depth = [0], 0
+        for c in self._code:
+            if c == "\n":
+                depths.append(depth)
+            elif c in opening:
+                depth += 1
+            elif c in closing:
+                depth = max(0, depth - 1)
+        return depths
+
+    def _statement_start(self, line: int) -> int:
+        """Offset of the line where the statement holding `line` starts, walking back over
+        lines that continue an open bracket (a call split across lines)."""
+        while line > 1 and self._line_depths[line - 1] > 0:
+            line -= 1
+        return self._line_starts[line - 1]
+
+    def _assigned_names(self, start: int, pos: int) -> list[str]:
+        """Identifiers left of the statement's assignment (`reset_token = ''.join(`)."""
+        code, depth = self._code, 0
+        for i in range(start, pos):
+            c = code[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+            elif c == "=" and depth == 0 and code[i + 1 : i + 2] != "=" and code[i - 1 : i] not in (
+                "=", "!", "<", ">",
+            ):  # fmt: skip
+                return _IDENTIFIER.findall(code, start, i)
+        return []
+
+    def _enclosing_function(self, pos: int) -> str | None:
+        code = self._code
+        if self.language == "python":
+            stmt = self._statement_start(self.line_of(pos))
+            indent = len(code[stmt:pos]) - len(code[stmt:pos].lstrip(" \t"))
+            for above in reversed(code[:stmt].split("\n")):
+                if not above.strip():
+                    continue
+                level = len(above) - len(above.lstrip(" \t"))
+                if level < indent:
+                    if m := _PY_DEF.match(above):
+                        return m.group(1)
+                    indent = level
+                if indent == 0:
+                    return None
+            return None
+        # Java / Go: walk out through the unclosed braces until one opens a function body
+        depth = 0
+        for i in range(pos - 1, -1, -1):
+            if code[i] == "}":
+                depth += 1
+            elif code[i] == "{" and depth:
+                depth -= 1
+            elif code[i] == "{":
+                header = code[max(code.rfind(c, 0, i) for c in ";{}") + 1 : i].strip()
+                name = _go_function(header) if self.language == "go" else _java_method(header)
+                if name is not None:
+                    return name
+        return None
 
     def _evidence(self, pos: int, observed: str, context: dict[str, str] | None) -> Evidence:
         line = self.line_of(pos)

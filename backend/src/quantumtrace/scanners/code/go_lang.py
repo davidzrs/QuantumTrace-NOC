@@ -91,7 +91,7 @@ def scan(src: SourceFile) -> None:
 
     if "math/rand" in imports or "math/rand/v2" in imports:
         for m in re.finditer(r"\brand\.(Read|Int\w*|Uint\w*)\(", text):
-            src.emit(m.start(), f"math/rand.{m.group(1)}", "non-csprng", "rng")
+            src.emit_weak_rng(m.start(), f"math/rand.{m.group(1)}")
 
 
 def _hand_rolled_kdf(src: SourceFile, hmac_spans: list[tuple[int, int]]) -> None:
