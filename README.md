@@ -8,6 +8,10 @@ FIPS 203/204/205
 Built for the JunctionX Lisbon 2026 "Inspiring Solutions" challenge (brief in the PDF at the
 repo root; data in `samples/`).
 
+**Live:** web app at <https://quantumtrace-three.vercel.app>, API docs at
+<https://quantumtrace-api-six.vercel.app/docs>. The web app's home page offers the browser
+extension for Chrome and Firefox, already pointed at this API.
+
 ## Quick start
 
 ```sh
