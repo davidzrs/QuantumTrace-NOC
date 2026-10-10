@@ -1,7 +1,7 @@
 # QuantumTrace web app
 
 React + Vite dashboard: upload files or paste a GitHub repository link, read the report, export
-the CBOM. It talks to the API only through `@quantumtrace/sdk`.
+the CBOM. It talks to the API only through `@quantumtrace/sdk`
 
 ```sh
 pnpm -F @quantumtrace/web dev     # http://localhost:5173, API from VITE_API_URL (default :8000)

@@ -9,7 +9,7 @@ const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce
 /**
  * Grid background with risk-coloured glows drifting between intersections. Sized to its
  * container, crisp on high-DPI screens, paused while off-screen, and a still frame when the
- * viewer prefers reduced motion.
+ * viewer prefers reduced motion..
  */
 export function HeroGlow({ opacity = 0.5 }: { opacity?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
