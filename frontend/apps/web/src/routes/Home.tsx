@@ -104,7 +104,7 @@ export function Home() {
                 : `The scan didn’t run: ${scanError.message}. Check that the scanner is online and try again.`}
             </p>
           )}
-          <RepoScan disabled={running !== null} maxRepoMb={health.data?.max_repo_mb} onScanned={onScanned} />
+          <RepoScan disabled={running !== null} onScanned={onScanned} />
         </ScanBench>
 
         <section aria-labelledby="extension-title" className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-5 rounded-xl border border-rule bg-surface p-5 sm:px-7 sm:py-6 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-center">

@@ -9,12 +9,10 @@ import { api } from "../lib/api";
  */
 export function RepoScan({
   disabled,
-  maxRepoMb,
   onScanned,
 }: {
   /** True while an upload scan runs: one scan at a time. */
   disabled: boolean;
-  maxRepoMb: number | undefined;
   onScanned: (result: ScanResult) => void;
 }) {
   const [url, setUrl] = useState("");
@@ -38,8 +36,7 @@ export function RepoScan({
         </label>
         <p id={hintId} className="max-w-[78ch] text-sm text-ink-muted">
           Paste a link to a public repository, or to a branch, tag or folder in it. The scanner downloads
-          that commit from GitHub, so nothing is uploaded from here
-          {maxRepoMb ? `, for repositories up to ${maxRepoMb} MB` : ""}.
+          that commit from GitHub, so nothing is uploaded from here.
         </p>
       </div>
       <div className="flex flex-wrap gap-3">
