@@ -19,6 +19,10 @@ from quantumtrace.core.models import QuantumThreat, RiskTier
         ("Ed25519", None, "eddsa", RiskTier.CRITICAL),
         ("ECDHE", None, "ecdh", RiskTier.CRITICAL),
         ("DSA", None, "dsa", RiskTier.CRITICAL),
+        ("DH", 2048, "dh", RiskTier.CRITICAL),
+        ("DH", 1024, "dh-1024", RiskTier.CRITICAL),  # SSH diffie-hellman-group1-sha1
+        ("DHE", 1024, "dh-1024", RiskTier.CRITICAL),  # TLS DHE, size from ServerKeyExchange
+        ("DH", 512, "dh-1024", RiskTier.CRITICAL),
         # Grover-weakened -> medium
         ("AES", 128, "aes-128", RiskTier.MEDIUM),
         ("AES-128-GCM", None, "aes-128", RiskTier.MEDIUM),
@@ -82,6 +86,17 @@ def test_plaintext_is_broken_but_not_a_quantum_tier() -> None:
         RiskTier.MEDIUM,
         QuantumThreat.NONE,
         True,
+    )
+
+
+def test_small_dh_is_broken_like_small_rsa() -> None:
+    dh = default_classifier().lookup("DH", 1024)
+    rsa = default_classifier().lookup("RSA", 1024)
+    assert dh is not None and rsa is not None
+    assert (dh.threat, dh.classically_broken, dh.classical_security_bits) == (
+        QuantumThreat.SHOR,
+        True,
+        rsa.classical_security_bits,
     )
 
 
