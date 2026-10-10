@@ -6,6 +6,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # Node 25+ no longer bundles corepack: install the pnpm pinned in package.json's packageManager.
 RUN npm install -g "$(node -p "require('./package.json').packageManager")"
 COPY frontend ./frontend
+COPY extensions ./extensions
 RUN pnpm install --frozen-lockfile
 ARG VITE_API_URL=http://localhost:8000
 ENV VITE_API_URL=$VITE_API_URL

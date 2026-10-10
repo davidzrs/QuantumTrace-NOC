@@ -40,8 +40,8 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | `frontend/apps/web/` | React 19 + Vite + Tailwind v4 dashboard (deployed to Vercel) |
 | `frontend/packages/sdk/` | generated OpenAPI types + typed client |
 | `frontend/packages/ui/` | `TierBadge`, `DebtStrip`, design tokens, shared with extension popups |
-| `frontend/apps/browser-extension/` | WXT popup (Chrome MV3 + Firefox) over `POST /api/v1/probes/tls` |
-| `frontend/apps/vscode-extension/` | placeholder with the integration contract |
+| `extensions/browser/` | WXT popup (Chrome MV3 + Firefox) over `POST /api/v1/probes/tls` |
+| `extensions/vscode/` | placeholder with the integration contract |
 | `samples/` | organiser data (READMEs in Portuguese). Read-only: never edit to make a test pass |
 
 ## Commands

@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const web = dirname(dirname(fileURLToPath(import.meta.url)));
-const extension = join(web, "..", "browser-extension");
+const extension = join(web, "..", "..", "..", "extensions", "browser");
 const outDir = join(web, "public", "extension");
 
 // Vite reads .env files only after this script runs, so only real environment variables count.

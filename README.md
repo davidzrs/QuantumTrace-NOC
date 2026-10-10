@@ -54,8 +54,9 @@ frontend/  pnpm workspace
   apps/web            React + Vite + Tailwind dashboard (Vercel)
   packages/sdk        typed client generated from the OpenAPI spec
   packages/ui         TierBadge, DebtStrip, design tokens (shared with extensions)
-  apps/browser-extension   Chrome/Firefox popup (WXT): is the site in this tab quantum-ready?
-  apps/vscode-extension    planned; contract in its README
+extensions/
+  browser             Chrome/Firefox popup (WXT): is the site in this tab quantum-ready?
+  vscode              planned; contract in its README
 samples/   organiser data (cloud posture JSON, Python/Java/Go repos, network.pcap)
 ```
 
