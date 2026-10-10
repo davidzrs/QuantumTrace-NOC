@@ -27,6 +27,14 @@ body {
   color: var(--qt-ink-muted);
 }
 
+/* Firefox sizes the popup before a vertical scrollbar appears; the scrollbar then takes width
+   from the fixed layout. Let a thin scrollbar sit in the right padding instead of adding a
+   horizontal scrollbar. */
+html:has(.popup) {
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--qt-rule-strong) transparent;
+}
 .popup {
   width: 380px;
   padding: 14px 16px 16px;

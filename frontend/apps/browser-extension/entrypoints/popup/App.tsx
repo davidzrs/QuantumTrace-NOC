@@ -5,6 +5,7 @@ import { cached, forget, remember } from "../../lib/cache";
 import { badge, headline, keyExchange, sections } from "../../lib/report";
 import { loadSettings, type Settings } from "../../lib/settings";
 import { targetFromUrl, type Target } from "../../lib/target";
+import { setToolbarBadge } from "../../lib/toolbar";
 
 type State =
   | { status: "loading" }
@@ -29,18 +30,19 @@ export function App() {
       const hit = await cached(t.key);
       if (hit) return setState({ status: "done", host: label, result: hit });
       setState({ status: "probing", host: label });
+      let result: ScanResult;
       try {
         const api = createClient({ baseUrl: s.apiUrl, apiKey: s.apiKey || undefined });
-        const result = await api.probeTls(t.host, t.port);
-        await remember(t.key, result);
-        setState({ status: "done", host: label, result });
-        if (tab !== undefined) {
-          const b = badge(result);
-          await browser.action.setBadgeText({ tabId: tab, text: b.text });
-          await browser.action.setBadgeBackgroundColor({ tabId: tab, color: BADGE_COLORS[b.tier] });
-        }
+        result = await api.probeTls(t.host, t.port);
       } catch (err) {
-        setState({ status: "error", host: label, message: explain(err, s) });
+        return setState({ status: "error", host: label, message: explain(err, s) });
+      }
+      // Only the API call can fail the check: caching and the badge are extras.
+      setState({ status: "done", host: label, result });
+      await remember(t.key, result).catch(() => undefined);
+      if (tab !== undefined) {
+        const b = badge(result);
+        await setToolbarBadge(tab, b.text, BADGE_COLORS[b.tier]);
       }
     },
     [],
