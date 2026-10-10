@@ -1,6 +1,6 @@
 # Static build of the web app served by nginx (for docker compose; production uses Vercel).
 # Build context: repository root.
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 RUN corepack enable
 WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
