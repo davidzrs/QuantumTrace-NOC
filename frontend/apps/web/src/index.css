@@ -1,0 +1,56 @@
+@import "tailwindcss";
+@import "@quantumtrace/ui/tokens.css";
+
+@source "../../../packages/ui/src";
+
+@theme inline {
+  --color-ground: var(--qt-ground);
+  --color-surface: var(--qt-surface);
+  --color-ink: var(--qt-ink);
+  --color-ink-muted: var(--qt-ink-muted);
+  --color-ink-faint: var(--qt-ink-faint);
+  --color-rule: var(--qt-rule);
+  --color-rule-strong: var(--qt-rule-strong);
+  --color-critical: var(--qt-critical);
+  --color-critical-wash: var(--qt-critical-wash);
+  --color-medium: var(--qt-medium);
+  --color-medium-wash: var(--qt-medium-wash);
+  --color-safe: var(--qt-safe);
+  --color-safe-wash: var(--qt-safe-wash);
+  --font-sans: var(--qt-font-sans);
+  --font-mono: var(--qt-font-mono);
+}
+
+@layer base {
+  html {
+    background: var(--qt-ground);
+    color: var(--qt-ink);
+    font-family: var(--qt-font-sans);
+    font-feature-settings: "tnum" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--qt-ink);
+    color: var(--qt-ground);
+  }
+  :focus-visible {
+    outline: 2px solid var(--qt-focus);
+    outline-offset: 2px;
+  }
+}
+
+/* The only orchestrated motion: the debt strip draws in once when a report opens. */
+@media (prefers-reduced-motion: no-preference) {
+  .qt-strip-reveal {
+    animation: qt-reveal 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    transform-origin: left;
+  }
+  @keyframes qt-reveal {
+    from {
+      clip-path: inset(0 100% 0 0);
+    }
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+}

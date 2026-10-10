@@ -1,0 +1,50 @@
+/*
+ * QuantumTrace design tokens. Plain CSS custom properties so the web app (Tailwind v4)
+ * and extension popups (no Tailwind) share one palette.
+ *
+ * Colour is reserved for risk: the three tier hues are the only chroma in the UI.
+ * Everything else is ink on porcelain.
+ */
+:root {
+  --qt-ground: #f3f5f7;
+  --qt-surface: #ffffff;
+  --qt-ink: #1b2430;
+  --qt-ink-muted: #5b6878;
+  --qt-ink-faint: #8a96a5;
+  --qt-rule: #d5dbe2;
+  --qt-rule-strong: #aeb8c4;
+
+  --qt-critical: #b3123f; /* Shor: breaks outright */
+  --qt-critical-wash: #fbe9ee;
+  --qt-medium: #9a6a12; /* Grover: weakened */
+  --qt-medium-wash: #fbf2df;
+  --qt-safe: #0f7b6c; /* quantum-resilient */
+  --qt-safe-wash: #e3f4f1;
+  --qt-unknown: #6b7685;
+  --qt-unknown-wash: #eceff3;
+
+  --qt-focus: #1b2430;
+  --qt-font-sans: "Public Sans", system-ui, sans-serif;
+  --qt-font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --qt-ground: #12171e;
+    --qt-surface: #19202a;
+    --qt-ink: #e6eaef;
+    --qt-ink-muted: #a3aebb;
+    --qt-ink-faint: #737f8d;
+    --qt-rule: #2c3540;
+    --qt-rule-strong: #46525f;
+    --qt-critical: #f0577f;
+    --qt-critical-wash: #3a1822;
+    --qt-medium: #e0a83c;
+    --qt-medium-wash: #33281a;
+    --qt-safe: #3cc2ad;
+    --qt-safe-wash: #14302c;
+    --qt-unknown: #9aa5b2;
+    --qt-unknown-wash: #262d36;
+    --qt-focus: #e6eaef;
+  }
+}

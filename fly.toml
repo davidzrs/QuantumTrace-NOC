@@ -1,0 +1,29 @@
+# Fly.io config for the QuantumTrace API. Deploy manually with `fly deploy` (no workflow yet).
+# First-time setup (once):  fly launch --no-deploy --copy-config --name <your-app-name>
+#                           fly secrets set QT_API_KEY=... QT_CORS_ORIGINS=https://<your-vercel-domain>
+app = "quantumtrace-api"   # TODO: change to your Fly app name
+primary_region = "mad"     # Madrid: closest region to Lisbon
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  QT_CORS_ORIGIN_REGEX = "https://.*\\.vercel\\.app"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/v1/health"
+    timeout = "3s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

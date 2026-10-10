@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "backend/.venv/bin/uvicorn",
+      "runtimeArgs": ["quantumtrace.api.app:app", "--app-dir", "backend/src", "--port", "8000", "--reload"],
+      "port": 8000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-F", "@quantumtrace/web", "dev"],
+      "port": 5173
+    }
+  ]
+}

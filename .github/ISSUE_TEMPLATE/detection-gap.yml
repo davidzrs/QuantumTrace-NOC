@@ -1,0 +1,23 @@
+name: Detection gap
+description: QuantumTrace missed or misclassified a cryptographic primitive
+labels: [detection]
+body:
+  - type: input
+    id: input
+    attributes:
+      label: Input
+      description: File / sample / capture where it happened
+      placeholder: samples/sample-repos/java/ReceiptSigner.java:18
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      placeholder: "Expected SHA1withRSA -> RSA (critical) + SHA-1 (medium); got nothing"
+    validations: { required: true }
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [False negative (missed), False positive, Wrong tier, Wrong NIST mapping]
+    validations: { required: true }

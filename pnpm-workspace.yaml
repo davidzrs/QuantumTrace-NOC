@@ -1,0 +1,5 @@
+packages:
+  - "frontend/apps/*"
+  - "frontend/packages/*"
+onlyBuiltDependencies:
+  - esbuild

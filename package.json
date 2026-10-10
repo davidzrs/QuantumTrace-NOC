@@ -1,0 +1,14 @@
+{
+  "name": "quantumtrace",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "pnpm -F @quantumtrace/web dev",
+    "build": "pnpm -F @quantumtrace/web build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "gen-sdk": "pnpm -F @quantumtrace/sdk generate"
+  }
+}

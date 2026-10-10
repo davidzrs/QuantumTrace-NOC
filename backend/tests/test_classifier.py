@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+import pytest
+
+from quantumtrace.core.classifier import Classifier, Rule, default_classifier, load_rules
+from quantumtrace.core.models import QuantumThreat, RiskTier
+
+
+@pytest.mark.parametrize(
+    ("algorithm", "key_size", "rule_id", "tier"),
+    [
+        # Shor-vulnerable -> critical
+        ("RSA", 2048, "rsa", RiskTier.CRITICAL),
+        ("RSA", 1024, "rsa-1024", RiskTier.CRITICAL),
+        ("RSA_4096", None, "rsa", RiskTier.CRITICAL),
+        ("ECDSA", 256, "ecdsa", RiskTier.CRITICAL),
+        ("EC_prime256v1", None, "ecdsa", RiskTier.CRITICAL),
+        ("SHA1withRSA", None, "rsa", RiskTier.CRITICAL),
+        ("Ed25519", None, "eddsa", RiskTier.CRITICAL),
+        ("ECDHE", None, "ecdh", RiskTier.CRITICAL),
+        ("DSA", None, "dsa", RiskTier.CRITICAL),
+        # Grover-weakened -> medium
+        ("AES", 128, "aes-128", RiskTier.MEDIUM),
+        ("AES-128-GCM", None, "aes-128", RiskTier.MEDIUM),
+        ("DESede", None, "3des", RiskTier.MEDIUM),
+        ("SHA-1", None, "sha1", RiskTier.MEDIUM),
+        ("MD5", None, "md5", RiskTier.MEDIUM),
+        # Quantum-resilient -> safe
+        ("AES", 256, "aes-256", RiskTier.SAFE),
+        ("SYMMETRIC_DEFAULT", None, "aes-256", RiskTier.SAFE),
+        ("SHA-384", None, "sha384", RiskTier.SAFE),
+        ("ML-KEM-768", None, "ml-kem", RiskTier.SAFE),
+        ("ML_DSA_65", None, "ml-dsa", RiskTier.SAFE),
+        ("SLH-DSA", None, "slh-dsa", RiskTier.SAFE),
+        ("X25519MLKEM768", None, "x25519mlkem768", RiskTier.SAFE),
+    ],
+)
+def test_lookup(algorithm: str, key_size: int | None, rule_id: str, tier: RiskTier) -> None:
+    rule = default_classifier().lookup(algorithm, key_size)
+    assert rule is not None, algorithm
+    assert (rule.id, rule.tier) == (rule_id, tier)
+
+
+def test_shor_rules_are_critical_and_grover_never_critical() -> None:
+    for rule in load_rules():
+        if rule.threat is QuantumThreat.SHOR:
+            assert rule.tier is RiskTier.CRITICAL, rule.id
+        if rule.threat is QuantumThreat.GROVER:
+            assert rule.tier is not RiskTier.CRITICAL, rule.id
+
+
+def test_every_non_safe_rule_has_replacement() -> None:
+    for rule in load_rules():
+        if rule.tier in (RiskTier.CRITICAL, RiskTier.MEDIUM):
+            assert rule.replacement, f"{rule.id} needs a migration target"
+
+
+def test_duplicate_alias_rejected() -> None:
+    base = {"primitive": "hash", "threat": "none", "tier": "safe", "rationale": "x"}
+    rules = [
+        Rule.model_validate({"id": "a", "name": "A", "aliases": ["dup"], **base}),
+        Rule.model_validate({"id": "b", "name": "B", "aliases": ["DUP"], **base}),
+    ]
+    with pytest.raises(ValueError, match="DUP"):
+        Classifier(rules)
+
+
+def test_unknown_algorithm_is_unknown_tier() -> None:
+    assert default_classifier().lookup("ROT13") is None

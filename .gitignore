@@ -1,2 +1,31 @@
-
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Editors
+.idea/
+*.swp
+
+# Local scan outputs
+*.cdx.json
+reports/

@@ -1,0 +1,1191 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "QuantumTrace API",
+    "description": "Discover, classify and report quantum-vulnerable cryptography (CBOM).",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Health",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rules": {
+      "get": {
+        "tags": [
+          "rules"
+        ],
+        "summary": "List Rules",
+        "operationId": "listRules",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Rule"
+                  },
+                  "title": "Response Listrules"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/samples": {
+      "get": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "List Samples",
+        "operationId": "listSamples",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Sample"
+                  },
+                  "title": "Response Listsamples"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scans/sample": {
+      "post": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "Scan Sample",
+        "operationId": "scanSample",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SampleScanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scans": {
+      "post": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "Scan Upload",
+        "operationId": "scanUpload",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_scanUpload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "List Scans",
+        "operationId": "listScans",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScanSummary"
+                  },
+                  "title": "Response Listscans"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scans/{scan_id}": {
+      "get": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "Get Scan",
+        "operationId": "getScan",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scans/{scan_id}/cbom": {
+      "get": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "Get Scan Cbom",
+        "operationId": "getScanCbom",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Getscancbom"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_scanUpload": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "Files or .zip archives to scan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_scanUpload"
+      },
+      "Classification": {
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "primitive": {
+            "$ref": "#/components/schemas/Primitive"
+          },
+          "threat": {
+            "$ref": "#/components/schemas/QuantumThreat"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/RiskTier"
+          },
+          "classically_broken": {
+            "type": "boolean",
+            "title": "Classically Broken",
+            "default": false
+          },
+          "nist_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nist Reference"
+          },
+          "replacement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement"
+          },
+          "oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oid"
+          },
+          "classical_security_bits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classical Security Bits"
+          },
+          "nist_quantum_level": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nist Quantum Level",
+            "description": "NIST PQC security category; 0 = broken by Shor"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rule_id",
+          "name",
+          "primitive",
+          "threat",
+          "tier",
+          "classically_broken",
+          "nist_reference",
+          "replacement",
+          "oid",
+          "classical_security_bits",
+          "nist_quantum_level",
+          "rationale"
+        ],
+        "title": "Classification"
+      },
+      "Confidence": {
+        "type": "string",
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "title": "Confidence",
+        "description": "How sure the scanner is about the identification (not about the risk)."
+      },
+      "CryptoAsset": {
+        "properties": {
+          "observed": {
+            "type": "string",
+            "title": "Observed",
+            "description": "Value exactly as seen in the source, e.g. 'RSA_2048'"
+          },
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm",
+            "description": "Canonical name or alias resolvable by the classifier"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant",
+            "description": "Precise form, e.g. AES-128-GCM, X25519, P-256 (display/CBOM)"
+          },
+          "key_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Size"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage",
+            "description": "e.g. SIGN_VERIFY, tls-key-exchange"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/Observation",
+            "default": "configured"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence",
+            "default": "high"
+          },
+          "exposure": {
+            "$ref": "#/components/schemas/Exposure",
+            "default": "unknown"
+          },
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flags"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Evidence"
+          },
+          "more_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": "array",
+            "title": "More Evidence",
+            "description": "Further places with the identical asset (e.g. repeat sessions to one server)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed",
+          "algorithm",
+          "variant",
+          "key_size",
+          "usage",
+          "observation",
+          "confidence",
+          "exposure",
+          "flags",
+          "evidence",
+          "more_evidence"
+        ],
+        "title": "CryptoAsset",
+        "description": "A raw detection emitted by a scanner, before classification."
+      },
+      "Evidence": {
+        "properties": {
+          "source_type": {
+            "$ref": "#/components/schemas/SourceType"
+          },
+          "location": {
+            "type": "string",
+            "title": "Location",
+            "description": "File path, cloud ARN or network flow (src:port -> dst:port)"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          },
+          "context": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_type",
+          "location",
+          "line",
+          "snippet",
+          "context"
+        ],
+        "title": "Evidence",
+        "description": "Where an asset was observed. Enough to trace a finding back to its origin."
+      },
+      "Exposure": {
+        "type": "string",
+        "enum": [
+          "internet",
+          "internal",
+          "unknown"
+        ],
+        "title": "Exposure"
+      },
+      "Finding": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "asset": {
+            "$ref": "#/components/schemas/CryptoAsset"
+          },
+          "classification": {
+            "$ref": "#/components/schemas/Classification"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "asset",
+          "classification"
+        ],
+        "title": "Finding"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "Health"
+      },
+      "Observation": {
+        "type": "string",
+        "enum": [
+          "negotiated",
+          "configured",
+          "in-code",
+          "permitted",
+          "offered"
+        ],
+        "title": "Observation",
+        "description": "How strongly the input proves the primitive is in use."
+      },
+      "Primitive": {
+        "type": "string",
+        "enum": [
+          "signature",
+          "pke",
+          "kem",
+          "key-agree",
+          "block-cipher",
+          "stream-cipher",
+          "ae",
+          "hash",
+          "mac",
+          "kdf",
+          "protocol",
+          "other"
+        ],
+        "title": "Primitive"
+      },
+      "QuantumThreat": {
+        "type": "string",
+        "enum": [
+          "shor",
+          "grover",
+          "none",
+          "unknown"
+        ],
+        "title": "QuantumThreat"
+      },
+      "RiskScore": {
+        "properties": {
+          "value": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Value",
+            "description": "0 = quantum-ready, 100 = maximum exposure"
+          },
+          "grade": {
+            "type": "string",
+            "title": "Grade"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/TierCounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "grade",
+          "counts"
+        ],
+        "title": "RiskScore"
+      },
+      "RiskTier": {
+        "type": "string",
+        "enum": [
+          "critical",
+          "medium",
+          "safe",
+          "unknown"
+        ],
+        "title": "RiskTier"
+      },
+      "Rule": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "primitive": {
+            "$ref": "#/components/schemas/Primitive"
+          },
+          "threat": {
+            "$ref": "#/components/schemas/QuantumThreat"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/RiskTier"
+          },
+          "classically_broken": {
+            "type": "boolean",
+            "title": "Classically Broken",
+            "default": false
+          },
+          "oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oid"
+          },
+          "nist_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nist Reference"
+          },
+          "replacement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement"
+          },
+          "classical_security_bits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classical Security Bits"
+          },
+          "nist_quantum_level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nist Quantum Level"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "primitive",
+          "threat",
+          "tier",
+          "classically_broken",
+          "oid",
+          "nist_reference",
+          "replacement",
+          "classical_security_bits",
+          "nist_quantum_level",
+          "rationale",
+          "aliases"
+        ],
+        "title": "Rule"
+      },
+      "Sample": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "files": {
+            "type": "integer",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "files"
+        ],
+        "title": "Sample"
+      },
+      "SampleScanRequest": {
+        "properties": {
+          "sample": {
+            "type": "string",
+            "title": "Sample"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample"
+        ],
+        "title": "SampleScanRequest"
+      },
+      "ScanNote": {
+        "properties": {
+          "scanner": {
+            "type": "string",
+            "title": "Scanner"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scanner",
+          "message"
+        ],
+        "title": "ScanNote",
+        "description": "Something a scanner could not see or verify. Shown to users so gaps are explicit."
+      },
+      "ScanResult": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "scanners": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scanners"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Findings"
+          },
+          "score": {
+            "$ref": "#/components/schemas/RiskScore"
+          },
+          "limitations": {
+            "items": {
+              "$ref": "#/components/schemas/ScanNote"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "targets",
+          "scanners",
+          "findings",
+          "score",
+          "limitations",
+          "errors"
+        ],
+        "title": "ScanResult"
+      },
+      "ScanSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "findings": {
+            "type": "integer",
+            "title": "Findings"
+          },
+          "score": {
+            "$ref": "#/components/schemas/RiskScore"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "targets",
+          "findings",
+          "score"
+        ],
+        "title": "ScanSummary"
+      },
+      "SourceType": {
+        "type": "string",
+        "enum": [
+          "cloud",
+          "code",
+          "network"
+        ],
+        "title": "SourceType"
+      },
+      "TierCounts": {
+        "properties": {
+          "critical": {
+            "type": "integer",
+            "title": "Critical",
+            "default": 0
+          },
+          "medium": {
+            "type": "integer",
+            "title": "Medium",
+            "default": 0
+          },
+          "safe": {
+            "type": "integer",
+            "title": "Safe",
+            "default": 0
+          },
+          "unknown": {
+            "type": "integer",
+            "title": "Unknown",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "critical",
+          "medium",
+          "safe",
+          "unknown"
+        ],
+        "title": "TierCounts"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -1,0 +1,137 @@
+"""Python: hashlib/hmac, pyca/cryptography (hazmat), PyCryptodome, stdlib `random` misuse."""
+
+from __future__ import annotations
+
+import re
+
+from quantumtrace.core.models import Confidence
+from quantumtrace.scanners.code.common import SourceFile
+
+HASH_NAMES = {
+    "md5": "MD5", "sha1": "SHA-1", "sha224": "SHA-224", "sha256": "SHA-256",
+    "sha384": "SHA-384", "sha512": "SHA-512", "sha3_256": "SHA3-256", "sha3_384": "SHA3-384",
+    "sha3_512": "SHA3-512", "sha512_256": "SHA-512",
+}  # fmt: skip
+HMAC_NAMES = {
+    "md5": "HmacMD5", "sha1": "HMAC-SHA1", "sha256": "HMAC-SHA256",
+    "sha384": "HMAC-SHA384", "sha512": "HMAC-SHA512",
+}  # fmt: skip
+CIPHERS = {
+    "AES": "AES", "AES128": "AES-128", "AES256": "AES-256", "TripleDES": "3DES", "DES3": "3DES",
+    "DES": "DES", "Blowfish": "Blowfish", "ARC4": "RC4", "ChaCha20": "ChaCha20",
+}  # fmt: skip
+CURVE_BITS = {"SECP256R1": 256, "SECP384R1": 384, "SECP521R1": 521, "SECP256K1": 256}
+KDFS = {
+    "PBKDF2HMAC": "PBKDF2", "Scrypt": "scrypt", "HKDF": "HKDF", "HKDFExpand": "HKDF",
+    "Argon2id": "Argon2",
+}  # fmt: skip
+
+
+def scan(src: SourceFile) -> None:
+    text = src.text
+    aes_bits, hardcoded = src.symmetric_key_hint()
+    key_flags = ["hardcoded-key"] if hardcoded else []
+
+    for m in re.finditer(r"\bhashlib\.(\w+)\s*\(", text):
+        if name := HASH_NAMES.get(m.group(1).lower()):
+            src.emit(m.start(), m.group(0).rstrip("( "), name, "hash")
+    for m in re.finditer(r"\bhashlib\.new\(\s*[\"'](\w+)[\"']", text):
+        if name := HASH_NAMES.get(m.group(1).lower()):
+            src.emit(m.start(), m.group(0), name, "hash")
+    for m in re.finditer(r"\bhmac\.new\([^)]*?(?:hashlib\.(\w+)|[\"'](\w+)[\"'])", text):
+        if name := HMAC_NAMES.get((m.group(1) or m.group(2)).lower()):
+            src.emit(m.start(), m.group(0), name, "mac")
+
+    # hashes.X() passed as a KDF's PRF belongs to the KDF finding, not a standalone hash
+    kdf_spans = [
+        m.span()
+        for m in re.finditer(r"\b(?:PBKDF2HMAC|HKDF|HKDFExpand|ConcatKDFHash)\([^)]*\)", text)
+    ]
+    for m in re.finditer(r"\bhashes\.(SHA\w+|MD5)\s*\(", text):
+        if any(a <= m.start() < b for a, b in kdf_spans):
+            continue
+        if name := HASH_NAMES.get(m.group(1).lower()):
+            src.emit(m.start(), m.group(0).rstrip("( "), name, "hash")
+
+    rsa_bits: int | None = None
+    for m in re.finditer(r"\brsa\.generate_private_key\(([^)]*)\)", text):
+        size = re.search(r"key_size\s*=\s*(\w+)", m.group(1))
+        rsa_bits = src.int_value(size.group(1)) if size else None
+        src.emit(m.start(), m.group(0), "RSA", "key-generation", key_size=rsa_bits)
+    for m in re.finditer(r"\bRSA\.generate\(\s*(\w+)", text):  # PyCryptodome
+        rsa_bits = src.int_value(m.group(1))
+        src.emit(m.start(), m.group(0), "RSA", "key-generation", key_size=rsa_bits)
+    for m in re.finditer(r"\bpadding\.(PKCS1v15|PSS|OAEP)\s*\(", text):
+        usage = "encryption" if m.group(1) == "OAEP" else "signature"
+        # key size carried over from key generation elsewhere in the file: inferred
+        conf = Confidence.MEDIUM if rsa_bits else Confidence.HIGH
+        src.emit(m.start(), m.group(0).rstrip("( "), "RSA", usage, key_size=rsa_bits,
+                 confidence=conf)  # fmt: skip
+
+    for m in re.finditer(r"\bec\.generate_private_key\(\s*ec\.(\w+)", text):
+        curve = m.group(1)
+        bits = CURVE_BITS.get(curve.upper())
+        src.emit(
+            m.start(),
+            m.group(0),
+            "ECDSA",
+            "key-generation",
+            key_size=bits,
+            context={"curve": curve},
+        )
+    for m in re.finditer(r"\bec\.ECDH\s*\(", text):
+        src.emit(m.start(), "ec.ECDH", "ECDH", "key-agreement")
+    for m in re.finditer(r"\b(ed25519|ed448)\.(Ed25519|Ed448)Private", text):
+        src.emit(m.start(), m.group(0), m.group(2), "signature")
+    for m in re.finditer(r"\b(x25519|x448)\.(X25519|X448)Private", text):
+        src.emit(m.start(), m.group(0), "ECDH", "key-agreement", context={"curve": m.group(2)})
+    for m in re.finditer(r"\bdsa\.generate_private_key\(([^)]*)\)", text):
+        size = re.search(r"key_size\s*=\s*(\w+)", m.group(1))
+        src.emit(m.start(), m.group(0), "DSA", "key-generation",
+                 key_size=src.int_value(size.group(1)) if size else None)  # fmt: skip
+    for m in re.finditer(r"\bdh\.generate_parameters\(", text):
+        src.emit(m.start(), "dh.generate_parameters", "DH", "key-agreement")
+
+    ecb = re.search(r"\bmodes\.ECB\s*\(|\bMODE_ECB\b", text) is not None
+    for m in re.finditer(r"\balgorithms\.(\w+)\s*\(", text):
+        if alg := CIPHERS.get(m.group(1)):
+            _cipher(src, m.start(), m.group(0).rstrip("( "), alg, aes_bits, key_flags, ecb)
+    for m in re.finditer(r"\b(AES|DES3|DES|ARC4|Blowfish)\.new\(", text):  # PyCryptodome
+        _cipher(
+            src, m.start(), m.group(0).rstrip("("), CIPHERS[m.group(1)], aes_bits, key_flags, ecb
+        )
+    for m in re.finditer(r"\b(AESGCM|AESCCM|AESOCB3|AESSIV|ChaCha20Poly1305)\s*\(", text):
+        alg = "ChaCha20-Poly1305" if m.group(1).startswith("ChaCha") else "AES"
+        mode = {"AESGCM": "GCM", "AESCCM": "CCM", "AESOCB3": "OCB", "AESSIV": "SIV"}.get(m.group(1))
+        _cipher(src, m.start(), m.group(1), alg, aes_bits, key_flags, ecb=False, mode=mode)
+
+    for m in re.finditer(r"\b(PBKDF2HMAC|Scrypt|HKDF|HKDFExpand|Argon2id)\s*\(([^)]*)\)?", text):
+        kdf = KDFS[m.group(1)]
+        prf = re.search(r"hashes\.(SHA\w+)\s*\(", m.group(2) or "")
+        variant = None
+        if prf and kdf in ("PBKDF2", "HKDF"):
+            variant = f"{kdf}-HMAC-{prf.group(1).upper().replace('_', '-')}"
+        src.emit(m.start(), m.group(1), kdf, "kdf", variant=variant)
+    for m in re.finditer(r"\bbcrypt\.hashpw\(", text):
+        src.emit(m.start(), "bcrypt.hashpw", "bcrypt", "kdf")
+
+    if re.search(r"^\s*(?:import random\b|from random import)", text, re.M):
+        for m in re.finditer(
+            r"\brandom\.(getrandbits|randint|randbytes|random|choice|choices)\s*\(", text
+        ):
+            src.emit(m.start(), m.group(0).rstrip("( "), "non-csprng", "rng")
+
+
+def _cipher(
+    src: SourceFile, pos: int, observed: str, alg: str, aes_bits: int | None,
+    key_flags: list[str], ecb: bool, mode: str | None = None,
+) -> None:  # fmt: skip
+    flags = list(key_flags)
+    if ecb and alg != "ChaCha20-Poly1305":
+        flags.append("ecb-mode")
+    size = aes_bits if alg == "AES" else None
+    # AES key size comes from a file-level literal/constant, not data flow: inferred
+    conf = Confidence.MEDIUM if alg == "AES" else Confidence.HIGH
+    ctx = {"mode": mode} if mode else None
+    src.emit(pos, observed, alg, "encryption", key_size=size, flags=flags, confidence=conf,
+             context=ctx)  # fmt: skip
