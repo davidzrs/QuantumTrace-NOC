@@ -112,6 +112,47 @@ def test_authentication_algorithms_reported_for_every_tls_listener(result: ScanR
     assert all(f.classification.tier is RiskTier.CRITICAL for f in auth)
 
 
+LISTENER_CERT_KEYS = {
+    "public-web-alb": "RSA",  # www.example.com, RSA_2048
+    "api-gateway-alb": "RSA",
+    "legacy-tcp-nlb": "RSA",
+    "internal-admin-alb": "EC",  # admin.internal.example.com, EC_prime256v1
+    "partner-api-alb": "EC",  # EC_secp384r1
+}
+
+
+@pytest.mark.parametrize(("lb", "cert_key"), LISTENER_CERT_KEYS.items())
+def test_listener_only_permits_suites_its_certificate_can_sign(
+    result: ScanResult, lb: str, cert_key: str
+) -> None:
+    findings = [f for f in by_context(result, "load_balancer", lb) if f.asset.usage != "transport"]
+    assert {f.asset.evidence.context["certificate_key"] for f in findings} == {cert_key}
+    auth = {f.classification.name for f in findings if f.asset.usage == "tls-authentication"}
+    assert auth == ({"RSA"} if cert_key == "RSA" else {"ECDSA"})
+    # the dropped suites don't feed the key exchange, cipher or MAC findings either
+    suites = ", ".join(f.asset.evidence.context.get("suites", "") for f in findings)
+    assert ("ECDSA" in suites) is (cert_key == "EC")
+    assert ("ECDHE-RSA" in suites) is (cert_key == "RSA")
+
+
+def test_static_rsa_needs_an_rsa_certificate(result: ScanResult) -> None:
+    def static_rsa(lb: str) -> list[Finding]:
+        return [f for f in by_context(result, "load_balancer", lb)
+                if f.asset.usage == "tls-key-exchange" and f.classification.name == "RSA"]  # fmt: skip
+
+    # both policies list AES128-SHA, but only the RSA certificate can carry it
+    assert static_rsa("public-web-alb")
+    assert not static_rsa("internal-admin-alb")
+
+
+def test_listener_with_unexported_certificate_keeps_every_suite(samples: Path) -> None:
+    alone = run_scan([samples / "cloud-posture/load_balancer_listeners.json"])
+    findings = by_context(alone, "load_balancer", "public-web-alb")
+    auth = {f.classification.name for f in findings if f.asset.usage == "tls-authentication"}
+    assert auth == {"ECDSA", "RSA"}
+    assert not any("certificate_key" in f.asset.evidence.context for f in findings)
+
+
 def test_policy_findings_are_permitted_with_json_paths(result: ScanResult) -> None:
     elb = [f for f in result.findings if "load_balancer" in f.asset.evidence.context]
     for f in elb:
