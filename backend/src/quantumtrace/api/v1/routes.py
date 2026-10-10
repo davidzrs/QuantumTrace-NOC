@@ -7,9 +7,11 @@ from typing import Annotated, Any
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from google.genai import errors as genai_errors
 from pydantic import Field
 
 from quantumtrace import __version__
+from quantumtrace.ai.fixer import FixSuggestion, FixUnavailable, fixable, same_file, suggest_fix
 from quantumtrace.api import github
 from quantumtrace.api.deps import get_repository, require_api_key
 from quantumtrace.api.settings import Settings, get_settings
@@ -40,6 +42,7 @@ class Health(Model):
     max_repo_mb: int = Field(
         description="Largest GitHub repository zip that /scans/github downloads"
     )
+    ai_fix: bool = Field(description="Whether POST .../findings/{id}/fix is configured")
 
 
 class Sample(Model):
@@ -73,6 +76,7 @@ def health(settings: SettingsDep, repo: Repo) -> Health:
         max_unpacked_mb=settings.max_unpacked_mb,
         persistent=repo.persistent,
         max_repo_mb=settings.max_repo_mb,
+        ai_fix=settings.ai_fix,
     )
 
 
@@ -234,3 +238,65 @@ def delete_scan(scan_id: str, repo: Repo) -> None:
 @router.get("/scans/{scan_id}/cbom", tags=["scans"], operation_id="getScanCbom")
 def get_scan_cbom(scan_id: str, repo: Repo) -> dict[str, Any]:
     return to_cyclonedx(get_scan(scan_id, repo))
+
+
+# Repeat clicks on the same finding shouldn't bill twice. Per process, small, never persisted.
+_fixes: dict[tuple[str, str], FixSuggestion] = {}
+_FIXES_KEPT = 256
+
+
+@router.post(
+    "/scans/{scan_id}/findings/{finding_id}/fix", tags=["scans"], operation_id="suggestFix"
+)
+def suggest_finding_fix(
+    scan_id: str, finding_id: str, settings: SettingsDep, repo: Repo
+) -> FixSuggestion:
+    """Ask Gemini to rewrite a code finding's snippet. Sends the snippet to Google."""
+    if (scan_id, finding_id) in _fixes:
+        return _fixes[(scan_id, finding_id)]
+    scan = get_scan(scan_id, repo)
+    finding = next((f for f in scan.findings if f.id == finding_id), None)
+    if finding is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Finding not found in this scan")
+    if not fixable(finding):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "Only code findings with a snippet can be fixed"
+        )
+    if not settings.gemini_api_key:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "AI fixes are off. Set GEMINI_API_KEY on the API to turn them on.",
+        )
+    try:
+        fix = suggest_fix(
+            finding,
+            api_key=settings.gemini_api_key,
+            model=settings.ai_model,
+            thinking=settings.ai_thinking or None,
+            related=same_file(finding, scan.findings),
+        )
+    except FixUnavailable as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{e} Try again.") from e
+    except genai_errors.APIError as e:
+        raise _gemini_error(e) from e
+    if len(_fixes) >= _FIXES_KEPT:
+        _fixes.pop(next(iter(_fixes)))
+    _fixes[(scan_id, finding_id)] = fix
+    return fix
+
+
+def _gemini_error(e: Exception) -> HTTPException:
+    code = getattr(e, "code", None)
+    if code == 429:
+        return HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Gemini's free-tier limit was reached. Wait a minute and try again.",
+        )
+    if code in (400, 401, 403):
+        return HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Gemini rejected the request. Check GEMINI_API_KEY and QT_AI_MODEL on the API.",
+        )
+    return HTTPException(
+        status.HTTP_502_BAD_GATEWAY, "Couldn't reach Gemini. Try again in a moment."
+    )

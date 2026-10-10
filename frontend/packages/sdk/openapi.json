@@ -604,6 +604,74 @@
           }
         }
       }
+    },
+    "/api/v1/scans/{scan_id}/findings/{finding_id}/fix": {
+      "post": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "Suggest Finding Fix",
+        "description": "Ask Gemini to rewrite a code finding's snippet. Sends the snippet to Google.",
+        "operationId": "suggestFix",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "finding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Finding Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixSuggestion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -963,6 +1031,65 @@
         ],
         "title": "Finding"
       },
+      "FixSuggestion": {
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "title": "Finding Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "original_snippet": {
+            "type": "string",
+            "title": "Original Snippet"
+          },
+          "fixed_snippet": {
+            "type": "string",
+            "title": "Fixed Snippet"
+          },
+          "changed": {
+            "type": "boolean",
+            "title": "Changed",
+            "description": "False when these lines stay as they are and the fix is elsewhere (caveats)"
+          },
+          "snippet_start_line": {
+            "type": "integer",
+            "title": "Snippet Start Line"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "Model that wrote the fix (may be a fallback model)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "finding_id",
+          "summary",
+          "original_snippet",
+          "fixed_snippet",
+          "changed",
+          "snippet_start_line",
+          "explanation",
+          "caveats",
+          "model"
+        ],
+        "title": "FixSuggestion",
+        "description": "An AI-written fix for one code finding. Review before applying."
+      },
       "GithubScanRequest": {
         "properties": {
           "url": {
@@ -1020,6 +1147,11 @@
             "type": "integer",
             "title": "Max Repo Mb",
             "description": "Largest GitHub repository zip that /scans/github downloads"
+          },
+          "ai_fix": {
+            "type": "boolean",
+            "title": "Ai Fix",
+            "description": "Whether POST .../findings/{id}/fix is configured"
           }
         },
         "type": "object",
@@ -1029,7 +1161,8 @@
           "max_upload_mb",
           "max_unpacked_mb",
           "persistent",
-          "max_repo_mb"
+          "max_repo_mb",
+          "ai_fix"
         ],
         "title": "Health"
       },

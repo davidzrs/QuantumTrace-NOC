@@ -1,8 +1,9 @@
 import type { Finding, RiskTier } from "@quantumtrace/sdk";
 import { TierGlyph } from "@quantumtrace/ui";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { FixPanel, fixError } from "./FixPanel";
 import { FIX_BY, fixRows, type FixBy, type FixRow } from "../lib/fix";
 import {
   algorithmLabel,
@@ -316,6 +317,10 @@ function FindingDetail({ row, scanId }: { row: FixRow; scanId: string }) {
   const place = members[Math.min(pick, members.length - 1)] ?? f;
   const shownPlaces = allPlaces ? members : members.slice(0, PLACES_SHOWN);
   const refs = standards(c);
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0, staleTime: 60_000 });
+  const canFix = health.data?.ai_fix === true && place.asset.evidence.source_type === "code" && !!place.asset.evidence.snippet;
+  const fix = useMutation({ mutationKey: ["fix", scanId, place.id], mutationFn: () => api.suggestFix(scanId, place.id) });
+  const fixed = fix.data?.finding_id === place.id ? fix.data : undefined;
 
   return (
     <div className="qt-fade grid gap-7 border-b border-rule-strong bg-surface px-4 pt-5 pb-8 sm:pr-6 lg:pl-[122px]">
@@ -331,7 +336,10 @@ function FindingDetail({ row, scanId }: { row: FixRow; scanId: string }) {
                 key={m.id}
                 type="button"
                 aria-pressed={place.id === m.id}
-                onClick={() => setPick(k)}
+                onClick={() => {
+                  setPick(k);
+                  fix.reset();
+                }}
                 className={`min-h-9 rounded-lg border px-3 font-mono text-[12.5px] ${
                   place.id === m.id ? "border-ink bg-raise text-ink" : "border-rule text-ink-muted hover:border-rule-strong hover:text-ink"
                 }`}
@@ -394,6 +402,20 @@ function FindingDetail({ row, scanId }: { row: FixRow; scanId: string }) {
             </span>
           )}
         </div>
+        <div className="flex flex-wrap gap-2">
+        {canFix && !fixed && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={fix.isPending}
+            onClick={() => fix.mutate()}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />
+            </svg>
+            {fix.isPending ? "Writing a fix…" : "Fix me"}
+          </button>
+        )}
         <button type="button" className="btn" aria-expanded={cbomOpen} onClick={() => setCbomOpen((o) => !o)}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M8 4H6a2 2 0 0 0-2 2v4l-2 2 2 2v4a2 2 0 0 0 2 2h2" />
@@ -401,7 +423,13 @@ function FindingDetail({ row, scanId }: { row: FixRow; scanId: string }) {
           </svg>
           {cbomOpen ? "Hide CBOM" : "View CBOM component"}
         </button>
+        </div>
       </div>
+
+      {fix.isError && (
+        <p role="alert" className="m-0 text-sm" style={{ color: "var(--qt-critical)" }}>{fixError(fix.error)}</p>
+      )}
+      {fixed && <FixPanel fix={fixed} />}
 
       {cbomOpen && <CbomComponent scanId={scanId} finding={place} />}
     </div>

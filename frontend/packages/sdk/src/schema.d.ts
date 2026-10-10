@@ -172,6 +172,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scans/{scan_id}/findings/{finding_id}/fix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Finding Fix
+         * @description Ask Gemini to rewrite a code finding's snippet. Sends the snippet to Google.
+         */
+        post: operations["suggestFix"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -318,6 +338,36 @@ export interface components {
             asset: components["schemas"]["CryptoAsset"];
             classification: components["schemas"]["Classification"];
         };
+        /**
+         * FixSuggestion
+         * @description An AI-written fix for one code finding. Review before applying.
+         */
+        FixSuggestion: {
+            /** Finding Id */
+            finding_id: string;
+            /** Summary */
+            summary: string;
+            /** Original Snippet */
+            original_snippet: string;
+            /** Fixed Snippet */
+            fixed_snippet: string;
+            /**
+             * Changed
+             * @description False when these lines stay as they are and the fix is elsewhere (caveats)
+             */
+            changed: boolean;
+            /** Snippet Start Line */
+            snippet_start_line: number;
+            /** Explanation */
+            explanation: string;
+            /** Caveats */
+            caveats: string[];
+            /**
+             * Model
+             * @description Model that wrote the fix (may be a fallback model)
+             */
+            model: string;
+        };
         /** GithubScanRequest */
         GithubScanRequest: {
             /**
@@ -357,6 +407,11 @@ export interface components {
              * @description Largest GitHub repository zip that /scans/github downloads
              */
             max_repo_mb: number;
+            /**
+             * Ai Fix
+             * @description Whether POST .../findings/{id}/fix is configured
+             */
+            ai_fix: boolean;
         };
         /**
          * Observation
@@ -892,6 +947,40 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggestFix: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                scan_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixSuggestion"];
                 };
             };
             /** @description Validation Error */
