@@ -1,4 +1,4 @@
-import type { ScanResult, ScanSummary } from "@quantumtrace/sdk";
+import type { ScanResult } from "@quantumtrace/sdk";
 import { TierGlyph } from "@quantumtrace/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -7,10 +7,11 @@ import { HeroGlow, useScramble } from "../components/HeroGlow";
 import { ChromeIcon, FirefoxIcon, VsCodeIcon } from "../components/BrandIcons";
 import { RepoScan } from "../components/RepoScan";
 import { ScanBench, type RunningScan } from "../components/ScanBench";
+import { ScanTable } from "../components/ScanTable";
 import { api } from "../lib/api";
-import { formatWhen } from "../lib/format";
-import { accountScanIds, accountState, removeScans, saveScans, useAccount } from "../lib/account";
-import { forget, mergeHistory, readHistory, remember, writeHistory } from "../lib/history";
+import { accountState, saveScans, useAccount } from "../lib/account";
+import { useDeleteScans } from "../lib/deleteScans";
+import { readHistory, remember, writeHistory } from "../lib/history";
 import type { Picked } from "../lib/intake";
 import { pack, UploadTooLarge } from "../lib/pack";
 import { TIER } from "../lib/tiers";
@@ -28,24 +29,17 @@ export function Home() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [running, setRunning] = useState<RunningScan | null>(null);
-  // Optional: signed in, the list also holds the account's scans from other computers. Any
-  // account failure falls back to this browser's history, so nothing here depends on it.
-  const account = useAccount();
-  const signedIn = account.status === "signed-in";
+  // Only this browser's scans, signed in or not. An account's scans are on the Account page.
+  const signedIn = useAccount().status === "signed-in";
   const scans = useQuery({
-    queryKey: ["scans", signedIn ? account.uid : "browser"],
+    queryKey: ["scans", "browser"],
     queryFn: async () => {
-      const local = readHistory();
-      const saved = signedIn ? await accountScanIds().catch(() => []) : [];
-      const ids = mergeHistory(local, saved);
+      const ids = readHistory();
       if (!ids.length) return [];
       const found = await api.listScans(ids);
       // Forget scans the API no longer has (they expire after 30 days).
       const alive = new Set(found.map((s) => s.id));
-      writeHistory(local.filter((id) => alive.has(id)));
-      if (signedIn) {
-        void removeScans(saved.filter((id) => ids.includes(id) && !alive.has(id))).catch(() => undefined);
-      }
+      writeHistory(ids.filter((id) => alive.has(id)));
       return found.sort((a, b) => b.created_at.localeCompare(a.created_at));
     },
   });
@@ -81,19 +75,7 @@ export function Home() {
   });
   const scanError = uploadScan.error;
 
-  const deleteScans = useMutation({
-    mutationFn: async (ids: string[]) => {
-      const results = await Promise.allSettled(ids.map((id) => api.deleteScan(id)));
-      const deleted = ids.filter((_, i) => results[i]?.status === "fulfilled");
-      forget(deleted);
-      if (accountState().status === "signed-in") await removeScans(deleted).catch(() => undefined);
-      for (const id of deleted) queryClient.removeQueries({ queryKey: ["scan", id] });
-      if (deleted.length < ids.length) {
-        throw new Error(`${ids.length - deleted.length} of ${ids.length} scans couldn’t be deleted`);
-      }
-    },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["scans"] }),
-  });
+  const deleteScans = useDeleteScans();
   const deleteAll = () => {
     const ids = scans.data?.map((s) => s.id) ?? [];
     const n = ids.length;
@@ -184,11 +166,14 @@ export function Home() {
             <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
               <span className="text-sm text-ink-faint">
                 {health.data?.persistent
-                  ? signedIn
-                    ? "Kept for 30 days, saved to your account"
-                    : "Kept for 30 days, listed only in this browser"
+                  ? "Kept for 30 days, listed only in this browser"
                   : "Held in memory until the API restarts"}
               </span>
+              {signedIn && (
+                <Link to="/account" className="link text-sm font-semibold text-ink-muted">
+                  Your account’s scans
+                </Link>
+              )}
               {!!scans.data?.length && (
                 <button
                   type="button"
@@ -207,52 +192,7 @@ export function Home() {
             </p>
           )}
           {scans.data?.length ? (
-            <div className="relative overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-left">
-                <thead className="text-[13px] text-ink-muted">
-                  <tr className="border-b border-rule-strong">
-                    <th className="py-2.5 pr-4 font-medium">Ran</th>
-                    <th className="py-2.5 pr-4 font-medium">Scanned</th>
-                    <th className="py-2.5 pr-4 font-medium">Shape</th>
-                    <th className="py-2.5 pr-4 text-right font-medium">Findings</th>
-                    <th className="py-2.5 pr-4 text-right font-medium">Critical</th>
-                    <th className="py-2.5 pr-4 text-right font-medium">Risk score</th>
-                    <th className="w-px py-2.5"><span className="sr-only">Delete</span></th>
-                  </tr>
-                </thead>
-                <tbody className="text-[15px]">
-                  {scans.data.map((s) => (
-                    <tr key={s.id} className="border-b border-rule">
-                      <td className="py-3.5 pr-4 whitespace-nowrap">
-                        <Link to={`/scans/${s.id}`} className="link font-semibold">
-                          {formatWhen(s.created_at)}
-                        </Link>
-                      </td>
-                      <td className="max-w-[22rem] truncate py-3.5 pr-4 font-mono text-[13px] text-ink-muted" title={s.targets.join(", ")}>
-                        {s.targets.join(", ")}
-                      </td>
-                      <td className="py-3.5 pr-4"><Shape scan={s} /></td>
-                      <td className="py-3.5 pr-4 text-right tabular-nums">{s.findings}</td>
-                      <td className="py-3.5 pr-4 text-right text-critical tabular-nums">{s.score.counts.critical}</td>
-                      <td className="py-3.5 pr-4 text-right whitespace-nowrap tabular-nums">
-                        <strong>{s.score.value}</strong> <span className="text-ink-muted">{s.score.grade}</span>
-                      </td>
-                      <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => deleteScans.mutate([s.id])}
-                          disabled={deleteScans.isPending}
-                          aria-label={`Delete the scan from ${formatWhen(s.created_at)}`}
-                          className="min-h-11 rounded-lg px-3 text-sm font-semibold text-ink-muted hover:bg-raise hover:text-critical disabled:opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ScanTable scans={scans.data} onDelete={(id) => deleteScans.mutate([id])} deleting={deleteScans.isPending} />
           ) : (
             <p className="text-ink-muted">
               {scans.isError
@@ -347,21 +287,5 @@ function WhyNow() {
         ))}
       </div>
     </figure>
-  );
-}
-
-function Shape({ scan }: { scan: ScanSummary }) {
-  const c = scan.score.counts;
-  const parts = (["critical", "medium", "unknown", "safe"] as const).filter((t) => c[t] > 0);
-  return (
-    <span
-      className="flex h-3.5 w-40 gap-0.5"
-      role="img"
-      aria-label={parts.map((t) => `${c[t]} ${TIER[t].label.toLowerCase()}`).join(", ") || "No findings"}
-    >
-      {parts.map((t) => (
-        <span key={t} className="rounded-xs" style={{ flex: c[t], background: TIER[t].color }} />
-      ))}
-    </span>
   );
 }

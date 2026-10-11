@@ -1,6 +1,7 @@
 /**
  * Scan history is per browser: the ids of the scans run here, newest first. The API has no
  * "list every scan" route, so nobody else's scans show up and ours don't follow us elsewhere.
+ * A signed-in account keeps its own list (lib/account.ts), shown on the Account page instead.
  * Storage can be unavailable (private windows, blocked site data): history is then just empty.
  */
 const KEY = "quantumtrace:scan-ids";
@@ -25,11 +26,6 @@ export function writeHistory(ids: string[]): void {
 
 export function remember(id: string): void {
   writeHistory([id, ...readHistory().filter((x) => x !== id)]);
-}
-
-/** This browser's scans plus a signed-in account's, without duplicates, at most MAX_HISTORY. */
-export function mergeHistory(local: string[], account: string[]): string[] {
-  return [...new Set([...local, ...account])].slice(0, MAX_HISTORY);
 }
 
 export function forget(ids: string[]): void {

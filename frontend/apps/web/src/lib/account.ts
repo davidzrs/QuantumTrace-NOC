@@ -4,13 +4,13 @@
  *
  * Firebase is loaded on demand, only when someone signs in or this browser already holds a
  * signed-in session (the HINT key), so visitors who never use accounts never download it.
- * An account stores the ids of its scans at users/{uid}/scans/{scanId}; the reports stay in the API.
+ * An account stores the ids of the scans run while signed in to it at users/{uid}/scans/{scanId};
+ * the reports stay in the API. This browser's own history (lib/history.ts) is kept apart from it.
  */
 import { useSyncExternalStore } from "react";
 import type { Auth } from "firebase/auth";
 import type { CollectionReference, Firestore } from "firebase/firestore";
-import { api } from "./api";
-import { MAX_HISTORY, readHistory } from "./history";
+import { MAX_HISTORY } from "./history";
 import { authMessage, emailFor, usernameOf } from "./username";
 
 const config = {
@@ -120,10 +120,10 @@ function codeOf(err: unknown): string | undefined {
 
 // ---------------------------------------------------------------- sign in / out
 /**
- * Sign in, or create the account first. Then copy this browser's scan history into the account.
- * Returns how many scans were added.
+ * Sign in, or create the account first. Nothing from this browser's history joins the account: on a
+ * shared computer those scans may be someone else's.
  */
-export async function signIn(username: string, password: string, create: boolean): Promise<number> {
+export async function signIn(username: string, password: string, create: boolean): Promise<void> {
   let s: Services;
   try {
     s = await load();
@@ -137,7 +137,6 @@ export async function signIn(username: string, password: string, create: boolean
   } catch (err) {
     throw new AccountError(authMessage(codeOf(err)));
   }
-  return copyBrowserHistory().catch(() => 0);
 }
 
 export async function signOut(): Promise<void> {
@@ -179,13 +178,4 @@ export async function removeScans(ids: string[]): Promise<void> {
   const batch = s.store.writeBatch(s.db);
   for (const id of ids) batch.delete(s.store.doc(col, id));
   await batch.commit();
-}
-
-/** Signed in, so the scans already in this browser join the account. */
-async function copyBrowserHistory(): Promise<number> {
-  const ids = readHistory();
-  if (!ids.length) return 0;
-  const found = await api.listScans(ids);
-  await saveScans(found.map(({ id, created_at, targets }) => ({ id, created_at, targets })));
-  return found.length;
 }

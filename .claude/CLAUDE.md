@@ -153,7 +153,10 @@ Both halves run on Vercel as two projects from this repo (see the `deploy` skill
   `<name>@users.quantumtrace.app`; no email is ever sent) and each account's scan ids in
   Firestore at `users/{uid}/scans/{scanId}`, readable only by its owner (Firestore rules). It's
   web-only (`lib/account.ts`, `routes/Account.tsx`): the API never sees users and reports stay in
-  Redis. Set `VITE_FIREBASE_API_KEY`, `_AUTH_DOMAIN`, `_PROJECT_ID`, `_APP_ID` on the web project;
+  Redis. The two histories stay apart: the home page lists only this browser's scans
+  (localStorage), the Account page only the account's. A scan joins an account only when it runs
+  while signed in; signing in never imports the browser's history (on a shared computer it may be
+  someone else's). Set `VITE_FIREBASE_API_KEY`, `_AUTH_DOMAIN`, `_PROJECT_ID`, `_APP_ID` on the web project;
   without them the Account link is hidden. Accounts must stay optional: no prompts, popups or
   gates in the scan flow, and Firebase loads only for browsers that sign in.
 - **AI fixes.** Set `GEMINI_API_KEY` (free key from aistudio.google.com) on the API project to
