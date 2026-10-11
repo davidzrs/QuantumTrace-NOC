@@ -11,3 +11,7 @@ pnpm -F @quantumtrace/web build   # dist/, plus the browser extension zips in pu
 Deployed on Vercel with this folder as the project's root directory and `VITE_API_URL` set to the
 API project's URL. Vercel only rebuilds this project when something under this folder (or a
 workspace package it uses) changes, so a commit that touches nothing here doesn't redeploy it.
+
+On the Hobby plan Vercel only deploys commits by members of the Vercel team. When a teammate's
+merge is blocked, the project owner can push any small commit under this folder, or click
+Redeploy on the blocked deployment.
