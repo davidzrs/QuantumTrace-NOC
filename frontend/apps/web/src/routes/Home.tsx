@@ -9,7 +9,8 @@ import { RepoScan } from "../components/RepoScan";
 import { ScanBench, type RunningScan } from "../components/ScanBench";
 import { api } from "../lib/api";
 import { formatWhen } from "../lib/format";
-import { forget, readHistory, remember, writeHistory } from "../lib/history";
+import { accountScanIds, accountState, removeScans, saveScans, useAccount } from "../lib/account";
+import { forget, mergeHistory, readHistory, remember, writeHistory } from "../lib/history";
 import type { Picked } from "../lib/intake";
 import { pack, UploadTooLarge } from "../lib/pack";
 import { TIER } from "../lib/tiers";
@@ -27,21 +28,35 @@ export function Home() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [running, setRunning] = useState<RunningScan | null>(null);
+  // Optional: signed in, the list also holds the account's scans from other computers. Any
+  // account failure falls back to this browser's history, so nothing here depends on it.
+  const account = useAccount();
+  const signedIn = account.status === "signed-in";
   const scans = useQuery({
-    queryKey: ["scans"],
+    queryKey: ["scans", signedIn ? account.uid : "browser"],
     queryFn: async () => {
-      const ids = readHistory();
+      const local = readHistory();
+      const saved = signedIn ? await accountScanIds().catch(() => []) : [];
+      const ids = mergeHistory(local, saved);
       if (!ids.length) return [];
       const found = await api.listScans(ids);
-      // Forget scans the API no longer has (they expire after 7 days).
-      writeHistory(found.map((s) => s.id));
-      return found;
+      // Forget scans the API no longer has (they expire after 30 days).
+      const alive = new Set(found.map((s) => s.id));
+      writeHistory(local.filter((id) => alive.has(id)));
+      if (signedIn) {
+        void removeScans(saved.filter((id) => ids.includes(id) && !alive.has(id))).catch(() => undefined);
+      }
+      return found.sort((a, b) => b.created_at.localeCompare(a.created_at));
     },
   });
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0 });
 
   const onScanned = (result: ScanResult) => {
     remember(result.id);
+    if (accountState().status === "signed-in") {
+      const { id, created_at, targets } = result;
+      void saveScans([{ id, created_at, targets }]).catch(() => undefined);
+    }
     queryClient.setQueryData(["scan", result.id], result);
     void queryClient.invalidateQueries({ queryKey: ["scans"] });
     void navigate(`/scans/${result.id}`);
@@ -71,6 +86,7 @@ export function Home() {
       const results = await Promise.allSettled(ids.map((id) => api.deleteScan(id)));
       const deleted = ids.filter((_, i) => results[i]?.status === "fulfilled");
       forget(deleted);
+      if (accountState().status === "signed-in") await removeScans(deleted).catch(() => undefined);
       for (const id of deleted) queryClient.removeQueries({ queryKey: ["scan", id] });
       if (deleted.length < ids.length) {
         throw new Error(`${ids.length - deleted.length} of ${ids.length} scans couldn’t be deleted`);
@@ -166,7 +182,9 @@ export function Home() {
             <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
               <span className="text-sm text-ink-faint">
                 {health.data?.persistent
-                  ? "Kept for 7 days, listed only in this browser"
+                  ? signedIn
+                    ? "Kept for 30 days, saved to your account"
+                    : "Kept for 30 days, listed only in this browser"
                   : "Held in memory until the API restarts"}
               </span>
               {!!scans.data?.length && (

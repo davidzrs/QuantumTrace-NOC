@@ -27,6 +27,11 @@ export function remember(id: string): void {
   writeHistory([id, ...readHistory().filter((x) => x !== id)]);
 }
 
+/** This browser's scans plus a signed-in account's, without duplicates, at most MAX_HISTORY. */
+export function mergeHistory(local: string[], account: string[]): string[] {
+  return [...new Set([...local, ...account])].slice(0, MAX_HISTORY);
+}
+
 export function forget(ids: string[]): void {
   const gone = new Set(ids);
   writeHistory(readHistory().filter((x) => !gone.has(x)));

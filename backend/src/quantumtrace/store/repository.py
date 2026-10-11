@@ -65,7 +65,7 @@ class RedisScanRepository:
         url: str,
         token: str,
         *,
-        ttl_seconds: int = 7 * 24 * 3600,
+        ttl_seconds: int = 30 * 24 * 3600,  # long enough to reopen reports saved to an account
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._http = httpx.Client(
