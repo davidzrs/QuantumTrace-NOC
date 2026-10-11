@@ -1,7 +1,7 @@
 import type { CryptoLibrary, Finding, RiskTier } from "@quantumtrace/sdk";
 import { TierGlyph } from "@quantumtrace/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { FixPanel, fixError } from "./FixPanel";
 import { findComponent } from "../lib/cbom";
@@ -411,6 +411,9 @@ function FindingPanel({
   // Stepping to a row without code falls back to the details.
   const fixable = row.members.some(hasSnippet);
   const shown: Tab = tab === "fix" && !fixable ? "details" : tab;
+  // The shortcut on the flagged line only shows when the API can actually write a fix.
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0, staleTime: 60_000 });
+  const onFix = fixable && health.data?.ai_fix !== false ? () => setTab("fix") : undefined;
   useEffect(() => {
     const d = dialog.current;
     if (d && !d.open) {
@@ -500,22 +503,30 @@ function FindingPanel({
               {usageLabel(f.asset.usage)} · {placesNote(row)}
             </span>
           </div>
-          <div role="group" aria-label="Show" className="seg justify-self-start">
-            <button type="button" className="seg-btn" aria-pressed={shown === "details"} onClick={() => setTab("details")}>
-              Details
-            </button>
-            <button type="button" className="seg-btn" aria-pressed={shown === "cbom"} onClick={() => setTab("cbom")}>
-              CBOM component
-            </button>
+          {/* One group of views; the AI fix stands apart from the other two so it reads as the action. */}
+          <div role="group" aria-label="Show" className="flex flex-wrap items-center gap-2.5">
+            <div className="seg">
+              <button type="button" className="seg-btn" aria-pressed={shown === "details"} onClick={() => setTab("details")}>
+                Details
+              </button>
+              <button type="button" className="seg-btn" aria-pressed={shown === "cbom"} onClick={() => setTab("cbom")}>
+                CBOM component
+              </button>
+            </div>
             {fixable && (
-              <button type="button" className="seg-btn" aria-pressed={shown === "fix"} onClick={() => setTab("fix")}>
-                <WrenchIcon />
-                Fix with AI
+              <button
+                type="button"
+                className="btn btn-ai min-h-[42px] rounded-[10px]"
+                aria-pressed={shown === "fix"}
+                onClick={() => setTab("fix")}
+              >
+                <SparkleIcon solid={shown === "fix"} />
+                <span className={shown === "fix" ? undefined : "ai-text"}>{AI_LABEL}</span>
               </button>
             )}
           </div>
         </header>
-        <PanelBody key={row.key} row={row} tab={shown} scanId={scanId} libraries={libraries} />
+        <PanelBody key={row.key} row={row} tab={shown} scanId={scanId} libraries={libraries} onFix={onFix} />
       </div>
     </dialog>
   );
@@ -527,11 +538,13 @@ function PanelBody({
   tab,
   scanId,
   libraries,
+  onFix,
 }: {
   row: FixRow;
   tab: Tab;
   scanId: string;
   libraries: CryptoLibrary[];
+  onFix?: () => void;
 }) {
   const [pick, setPick] = useState(0);
   const place = row.members[Math.min(pick, row.members.length - 1)] ?? row.lead;
@@ -539,7 +552,7 @@ function PanelBody({
     // Keyed by tab too: each tab opens at its top.
     <div key={tab} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-5 pb-10 sm:px-7">
       {tab === "details" ? (
-        <FindingDetail row={row} place={place} onPick={setPick} libraries={libraries} />
+        <FindingDetail row={row} place={place} onPick={setPick} libraries={libraries} onFix={onFix} />
       ) : tab === "cbom" ? (
         <CbomComponent key={place.id} scanId={scanId} row={row} place={place} onPick={setPick} />
       ) : (
@@ -576,11 +589,14 @@ function FindingDetail({
   place,
   onPick,
   libraries,
+  onFix,
 }: {
   row: FixRow;
   place: Finding;
   onPick: (index: number) => void;
   libraries: CryptoLibrary[];
+  /** Opens the AI fix for this place, from a shortcut on its flagged line. */
+  onFix?: () => void;
 }) {
   const [allPlaces, setAllPlaces] = useState(false);
   const { lead: f, members } = row;
@@ -624,7 +640,7 @@ function FindingDetail({
             )}
           </div>
         )}
-        <EvidenceView key={place.id} finding={place} />
+        <EvidenceView key={place.id} finding={place} onFix={hasSnippet(place) ? onFix : undefined} />
       </div>
 
       <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
@@ -753,10 +769,10 @@ function strengthNote(f: Finding): string {
 }
 
 /** The flagged source with its neighbours, or the cloud or network context it was read from. */
-function EvidenceView({ finding: f }: { finding: Finding }) {
+function EvidenceView({ finding: f, onFix }: { finding: Finding; onFix?: () => void }) {
   const e = f.asset.evidence;
   const [allSessions, setAllSessions] = useState(false);
-  if (e.snippet) return <SnippetList finding={f} />;
+  if (e.snippet) return <SnippetList finding={f} onFix={onFix} />;
   const context = Object.entries(e.context ?? {}).filter(([, v]) => v);
   const more = f.asset.more_evidence;
   const shown = allSessions ? more : more.slice(0, SESSIONS_SHOWN);
@@ -800,16 +816,17 @@ function EvidenceView({ finding: f }: { finding: Finding }) {
 const SNIPPETS_SHOWN = 3;
 
 /** One snippet per line the asset was seen on in this file (repeats are in `more_evidence`). */
-function SnippetList({ finding: f }: { finding: Finding }) {
+function SnippetList({ finding: f, onFix }: { finding: Finding; onFix?: () => void }) {
   const [all, setAll] = useState(false);
   const places = [f.asset.evidence, ...f.asset.more_evidence];
   const shown = all ? places : places.slice(0, SNIPPETS_SHOWN);
-  if (places.length === 1) return <CodeSnippet finding={f} evidence={f.asset.evidence} />;
+  if (places.length === 1) return <CodeSnippet finding={f} evidence={f.asset.evidence} onFix={onFix} />;
   return (
     <div className="grid min-w-0 gap-3">
       <span className="text-[13px] text-ink-muted">Seen on {places.length} lines</span>
       {shown.map((e, i) => (
-        <CodeSnippet key={i} finding={f} evidence={e} />
+        // The fix rewrites the first line's snippet, so only that one offers it.
+        <CodeSnippet key={i} finding={f} evidence={e} onFix={i === 0 ? onFix : undefined} />
       ))}
       {places.length > SNIPPETS_SHOWN && (
         <button type="button" aria-expanded={all} onClick={() => setAll((a) => !a)} className="link justify-self-start text-sm font-semibold">
@@ -820,7 +837,7 @@ function SnippetList({ finding: f }: { finding: Finding }) {
   );
 }
 
-function CodeSnippet({ finding: f, evidence: e }: { finding: Finding; evidence: Evidence }) {
+function CodeSnippet({ finding: f, evidence: e, onFix }: { finding: Finding; evidence: Evidence; onFix?: () => void }) {
   if (!e.snippet) return null;
   const meta = TIER[f.classification.tier];
   const first = e.snippet_start_line ?? e.line ?? 1;
@@ -844,19 +861,27 @@ function CodeSnippet({ finding: f, evidence: e }: { finding: Finding; evidence: 
           {lines.map((text, i) => {
             const n = first + i;
             const hit = n === e.line;
+            const chip = hit && onFix;
             return (
               <span
                 key={n}
-                className={`block ${hit ? "font-medium text-white" : "text-ink-soft"}`}
+                className={`${chip ? "flex items-center" : "block"} ${hit ? "font-medium text-white" : "text-ink-soft"}`}
                 style={hit ? { background: meta.wash, boxShadow: `inset 3px 0 ${meta.color}` } : undefined}
               >
-                <span className="inline-block w-11 pr-4 text-right text-ink-ghost tabular-nums select-none" aria-hidden>
+                <span className="inline-block w-11 flex-none pr-4 text-right text-ink-ghost tabular-nums select-none" aria-hidden>
                   {n}
                 </span>
                 <span className="pr-6 whitespace-pre">
                   {hit && <span className="sr-only">Flagged line {n}: </span>}
                   {hit ? <MarkedLine text={text} match={e.end_column != null ? f.asset.observed : null} color={meta.color} /> : text || " "}
                 </span>
+                {chip && (
+                  // Sticky, so it stays in view at the right edge when a long line scrolls.
+                  <button type="button" onClick={onFix} className="ai-chip sticky right-3 mr-3 ml-auto">
+                    <SparkleIcon size={12} />
+                    <span className="ai-text">{AI_LABEL}</span>
+                  </button>
+                )}
               </span>
             );
           })}
@@ -898,15 +923,31 @@ function PlaceSelect({ row, place, onPick }: { row: FixRow; place: Finding; onPi
   );
 }
 
-function WrenchIcon() {
+const AI_LABEL = "Fix code with AI";
+
+/** Two sparkles in the AI gradient, or plain white on a solid gradient button. */
+function SparkleIcon({ size = 15, solid = false }: { size?: number; solid?: boolean }) {
+  const id = useId();
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="flex-none">
+      {!solid && (
+        <defs>
+          <linearGradient id={id} x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stopColor="#4796e3" />
+            <stop offset="0.55" stopColor="#9177c7" />
+            <stop offset="1" stopColor="#ca6673" />
+          </linearGradient>
+        </defs>
+      )}
+      <g fill={solid ? "currentColor" : `url(#${id})`}>
+        <path d="M10 5.5c.75 4.6 3.9 7.75 8.5 8.5-4.6.75-7.75 3.9-8.5 8.5-.75-4.6-3.9-7.75-8.5-8.5 4.6-.75 7.75-3.9 8.5-8.5Z" />
+        <path d="M18.5 1.5c.3 1.9 1.6 3.2 3.5 3.5-1.9.3-3.2 1.6-3.5 3.5-.3-1.9-1.6-3.2-3.5-3.5 1.9-.3 3.2-1.6 3.5-3.5Z" />
+      </g>
     </svg>
   );
 }
 
-/** "Fix with AI": the API sends this place's snippet to its model and returns a rewrite as a diff. */
+/** "Fix code with AI": the API sends this place's snippet to its model and returns a rewrite as a diff. */
 function FixWithAi({
   scanId,
   row,
@@ -940,9 +981,9 @@ function FixWithAi({
           <span className="text-[13px] text-ink-muted">The API sends these lines to its AI model and shows the rewrite as a diff.</span>
         </div>
         {canSend && !fix.data && (
-          <button type="button" className="btn btn-sm btn-primary" disabled={!aiOn || fix.isFetching} onClick={() => void fix.refetch()}>
-            <WrenchIcon />
-            {fix.isFetching ? "Writing a fix…" : "Fix with AI"}
+          <button type="button" className="btn btn-ai-solid" disabled={!aiOn || fix.isFetching} onClick={() => void fix.refetch()}>
+            <SparkleIcon solid />
+            {fix.isFetching ? "Writing a fix…" : AI_LABEL}
           </button>
         )}
       </div>

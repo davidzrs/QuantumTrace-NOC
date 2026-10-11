@@ -75,6 +75,7 @@ describe("pdf summary", () => {
     expect(order.every((at) => at > 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(pdf).toContain("Recommended: ML-KEM");
+    expect(pdf).toContain("The full details are in the online report");
     expect(pdf).toContain(REPORT);
     expect(pdf).toContain("Page 1 of 1");
   });

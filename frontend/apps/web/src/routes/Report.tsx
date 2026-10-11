@@ -111,16 +111,22 @@ function ReportBody({ result }: { result: ScanResult }) {
             ) : (
               <span />
             )}
-            <div className="flex flex-wrap gap-2">
+            {/* Least to most important, left to right: the PDF is a skim, the CBOM is the deliverable. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="btn border-transparent px-3 font-medium text-ink-muted hover:border-transparent hover:bg-raise hover:text-ink"
+                onClick={() => pdf.mutate()}
+                disabled={pdf.isPending}
+              >
+                {pdf.isPending ? "Exporting…" : "Export PDF summary"}
+              </button>
               <button
                 type="button"
                 className="btn"
                 onClick={() => downloadJson(`quantumtrace-report-${result.id.slice(0, 8)}.json`, result)}
               >
                 Download report
-              </button>
-              <button type="button" className="btn" onClick={() => pdf.mutate()} disabled={pdf.isPending}>
-                {pdf.isPending ? "Exporting…" : "Export PDF"}
               </button>
               <button type="button" className="btn btn-primary" onClick={() => void exportCbom()}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
