@@ -67,6 +67,11 @@
     color: var(--qt-ink);
     font-family: var(--qt-font-sans);
     -webkit-font-smoothing: antialiased;
+    scrollbar-gutter: stable; /* no sideways jump when a panel locks the page */
+  }
+  /* A modal panel holds the page still behind it, so only the panel scrolls. */
+  html:has(dialog[open]) {
+    overflow: hidden;
   }
   body {
     background-color: var(--qt-ground);

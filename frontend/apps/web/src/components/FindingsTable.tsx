@@ -1,9 +1,10 @@
 import type { Finding, RiskTier } from "@quantumtrace/sdk";
 import { TierGlyph } from "@quantumtrace/ui";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { FixPanel, fixError } from "./FixPanel";
+import { findComponent } from "../lib/cbom";
 import { FIX_BY, fixRows, type FixBy, type FixRow } from "../lib/fix";
 import {
   algorithmLabel,
@@ -14,14 +15,16 @@ import {
   observationLabel,
   placeLabel,
   plural,
+  SOURCE_LABEL,
   standards,
   usageLabel,
   variantLabel,
   type Evidence,
+  type Source,
 } from "../lib/format";
 import { TIER, TIERS } from "../lib/tiers";
 
-const PAGE = 40;
+const PAGE = 8;
 const PLACES_SHOWN = 12;
 const SESSIONS_SHOWN = 40;
 
@@ -33,18 +36,22 @@ const FIX_TAG: Record<FixBy, React.CSSProperties> = {
   none: { border: "1px solid var(--qt-rule-strong)", color: "var(--qt-ink-faint)" },
 };
 
-/** Column heads stay put while the list scrolls under them. */
-const TH = "sticky top-0 z-[2] h-9 bg-ground py-2 pr-4 font-medium shadow-[inset_0_-1px_0_var(--qt-rule-strong)]";
+const TH = "h-9 py-2 pr-4 font-medium shadow-[inset_0_-1px_0_var(--qt-rule-strong)]";
+const ICON_BTN =
+  "grid size-9 place-items-center rounded-lg text-ink-muted hover:bg-raise hover:text-ink disabled:cursor-not-allowed disabled:text-ink-ghost disabled:hover:bg-transparent";
 
 /**
- * Every finding, grouped where identical and ordered by when to fix it. A row opens to show
- * where it is, what threatens it, what replaces it, and its CBOM component.
+ * Every finding, grouped where identical and ordered by when to fix it. The list pages instead
+ * of scrolling, so the panels below stay in reach, and a row opens a side panel with where it
+ * is, what threatens it, what replaces it, and its CBOM component.
  */
 export function FindingsTable({
   scanId,
   findings,
   tier,
   onTierChange,
+  source,
+  onSourceChange,
   query,
   onQueryChange: setQuery,
 }: {
@@ -52,22 +59,22 @@ export function FindingsTable({
   findings: Finding[];
   tier: RiskTier | undefined;
   onTierChange: (tier: RiskTier | undefined) => void;
+  /** Only this source's findings (picked on the debt strip). */
+  source: Source | undefined;
+  onSourceChange: (source: Source | undefined) => void;
   query: string;
   onQueryChange: (query: string) => void;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const [limit, setLimit] = useState(PAGE);
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [grouped, setGrouped] = useState(true);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
-  // The list scrolls inside a fixed height so the panels below stay in reach; a new filter
-  // starts it from the top again.
-  const scroller = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    scroller.current?.scrollTo({ top: 0 });
-  }, [findings, tier, deferredQuery, grouped]);
 
+  const scoped = useMemo(
+    () => (source ? findings.filter((f) => f.asset.evidence.source_type === source) : findings),
+    [findings, source],
+  );
   const rows = useMemo(() => {
-    const matching = findings
+    const matching = scoped
       .filter((f) => !tier || f.classification.tier === tier)
       .filter((f) => {
         if (!deferredQuery) return true;
@@ -88,10 +95,41 @@ export function FindingsTable({
         return haystack.includes(deferredQuery);
       });
     return fixRows(matching, grouped);
-  }, [findings, tier, deferredQuery, grouped]);
-  const visible = rows.slice(0, limit);
+  }, [scoped, tier, deferredQuery, grouped]);
   const findingCount = rows.reduce((n, r) => n + r.members.length, 0);
-  const count = (t: RiskTier) => findings.filter((f) => f.classification.tier === t).length;
+  const count = (t: RiskTier) => scoped.filter((f) => f.classification.tier === t).length;
+
+  // A page belongs to one list of rows: a new source, tier, search or grouping starts from the first.
+  const [paging, setPaging] = useState({ page: 0, rows });
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const page = paging.rows === rows ? Math.min(paging.page, pages - 1) : 0;
+  const visible = rows.slice(page * PAGE, (page + 1) * PAGE);
+  const table = useRef<HTMLDivElement>(null);
+  const turn = (to: number) => {
+    setPaging({ page: to, rows });
+    // Pages differ in height: bring the column heads back if the reader scrolled past them.
+    const el = table.current;
+    if (el && el.getBoundingClientRect().top < 64) el.scrollIntoView({ block: "start" });
+  };
+
+  const openIndex = openKey === null ? -1 : rows.findIndex((r) => r.key === openKey);
+  const openRow = rows[openIndex];
+  const step = (to: number) => {
+    const next = rows[to];
+    if (!next) return;
+    setOpenKey(next.key);
+    setPaging({ page: Math.floor(to / PAGE), rows }); // the table follows the panel
+  };
+  // Closing the panel puts focus back on the row it last showed.
+  const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const lastOpen = useRef<string | null>(null);
+  useEffect(() => {
+    if (openKey !== null) lastOpen.current = openKey;
+    else if (lastOpen.current !== null) {
+      buttons.current.get(lastOpen.current)?.focus();
+      lastOpen.current = null;
+    }
+  }, [openKey]);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
@@ -101,7 +139,8 @@ export function FindingsTable({
             What to fix, in order
           </h2>
           <p className="text-ink-muted">
-            Already broken first, then what Shor’s algorithm breaks before 2030, then Grover hardening.
+            Broken today first. Then what Shor’s algorithm will break once quantum computers are big
+            enough: NIST deprecates it in 2030 and disallows it in 2035. Then Grover hardening.
           </p>
         </div>
         <span className="text-sm text-ink-muted tabular-nums" aria-live="polite">
@@ -112,7 +151,7 @@ export function FindingsTable({
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <div role="group" aria-label="Filter by tier" className="flex flex-wrap gap-1.5">
           <button type="button" className="chip" aria-pressed={!tier} onClick={() => onTierChange(undefined)}>
-            All<span className="opacity-70">{findings.length}</span>
+            All<span className="opacity-70">{scoped.length}</span>
           </button>
           {TIERS.filter((t) => count(t) > 0).map((t) => (
             <button
@@ -126,6 +165,18 @@ export function FindingsTable({
               <span className="opacity-70">{count(t)}</span>
             </button>
           ))}
+          {source && (
+            <button
+              type="button"
+              className="chip"
+              aria-pressed
+              aria-label={`Showing ${SOURCE_LABEL[source].toLowerCase()} only. Show every source`}
+              onClick={() => onSourceChange(undefined)}
+            >
+              {SOURCE_LABEL[source]} only
+              <span aria-hidden>×</span>
+            </button>
+          )}
         </div>
         <label className="flex min-h-9 max-w-[380px] flex-[1_1_260px] items-center gap-2.5 rounded-lg border border-rule-strong px-3.5 focus-within:border-ink">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden className="shrink-0 text-ink-faint">
@@ -136,10 +187,7 @@ export function FindingsTable({
           <input
             type="search"
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setOpen(null);
-            }}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="Algorithm, alias, file, ARN, flag"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
           />
@@ -148,18 +196,25 @@ export function FindingsTable({
           <input
             type="checkbox"
             checked={grouped}
-            onChange={(e) => {
-              setGrouped(e.target.checked);
-              setLimit(PAGE);
-              setOpen(null);
-            }}
+            onChange={(e) => setGrouped(e.target.checked)}
             className="size-4 accent-[var(--qt-ink)]"
           />
           Group identical findings
         </label>
+        {pages > 1 && (
+          // The same page turn as below the table, in reach without scrolling down to it.
+          <div role="group" aria-label="Pages" className="ml-auto flex items-center gap-1">
+            <button type="button" className={ICON_BTN} aria-label="Previous page" disabled={page === 0} onClick={() => turn(page - 1)}>
+              <Chevron dir="left" />
+            </button>
+            <button type="button" className={ICON_BTN} aria-label="Next page" disabled={page === pages - 1} onClick={() => turn(page + 1)}>
+              <Chevron dir="right" />
+            </button>
+          </div>
+        )}
       </div>
 
-      <div ref={scroller} className="relative max-h-[min(600px,72vh)] overflow-auto border-b border-rule">
+      <div ref={table} className="scroll-mt-16 overflow-x-auto border-b border-rule">
         <table className="w-full border-collapse text-left sm:min-w-[600px] md:min-w-[960px]">
           <thead className="text-[13px] text-ink-muted">
             <tr>
@@ -173,60 +228,95 @@ export function FindingsTable({
             </tr>
           </thead>
           <tbody className="text-sm">
-            {visible.map((row) => {
-              const expanded = open === row.key;
-              const toggle = () => setOpen(expanded ? null : row.key);
-              return (
-                <Fragment key={row.key}>
-                  <Row row={row} expanded={expanded} onToggle={toggle} />
-                  {expanded && (
-                    <tr>
-                      <td colSpan={7} className="p-0">
-                        <FindingDetail row={row} scanId={scanId} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
+            {visible.map((row) => (
+              <Row
+                key={row.key}
+                row={row}
+                selected={row.key === openKey}
+                onOpen={() => setOpenKey(row.key)}
+                buttonRef={(el) => {
+                  if (el) buttons.current.set(row.key, el);
+                  else buttons.current.delete(row.key);
+                }}
+              />
+            ))}
           </tbody>
         </table>
-        {rows.length > visible.length && (
-          <div className="flex flex-wrap items-center gap-4 py-4">
-            <button type="button" onClick={() => setLimit((l) => l + PAGE)} className="btn">
-              Show {Math.min(PAGE, rows.length - visible.length)} more
-            </button>
-            <p className="text-sm text-ink-muted tabular-nums">
-              Showing {visible.length} of {rows.length} {grouped ? "rows" : "findings"}
-            </p>
-          </div>
-        )}
         {rows.length === 0 && (
           <p className="py-8 text-ink-muted">No findings match. Clear the search or pick another tier.</p>
         )}
       </div>
+
+      {pages > 1 && (
+        <nav aria-label="Pages of findings" className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-ink-muted tabular-nums">
+            {page * PAGE + 1}–{page * PAGE + visible.length} of {rows.length} {grouped ? "rows" : "findings"}
+          </p>
+          <div className="flex items-center gap-2">
+            <button type="button" className="btn btn-sm" disabled={page === 0} onClick={() => turn(page - 1)}>
+              <Chevron dir="left" />
+              Previous
+            </button>
+            <span className="min-w-[88px] text-center text-sm text-ink-muted tabular-nums">
+              Page {page + 1} of {pages}
+            </span>
+            <button type="button" className="btn btn-sm" disabled={page === pages - 1} onClick={() => turn(page + 1)}>
+              Next
+              <Chevron dir="right" />
+            </button>
+          </div>
+        </nav>
+      )}
+
+      {openRow && (
+        <FindingPanel
+          row={openRow}
+          index={openIndex}
+          total={rows.length}
+          scanId={scanId}
+          onStep={step}
+          onClose={() => setOpenKey(null)}
+        />
+      )}
     </div>
   );
 }
 
-function Row({ row, expanded, onToggle }: { row: FixRow; expanded: boolean; onToggle: () => void }) {
-  const { lead: f, members } = row;
-  const tier = TIER[f.classification.tier];
-  const family = variantLabel(f);
-  const flags = [
+function Chevron({ dir }: { dir: "left" | "right" }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+      <path d={dir === "left" ? "m8 2-4 4 4 4" : "m4 2 4 4-4 4"} fill="none" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function rowFlags(row: FixRow): string[] {
+  const f = row.lead;
+  return [
     row.fixBy === "harden" && f.classification.classically_broken ? "broken today" : "",
     ...f.asset.flags.map((x) => x.replace(/-/g, " ")),
   ].filter(Boolean);
-  // An open row pins under the column heads, so its collapse button stays in reach while the
-  // details scroll past.
-  const cell = `py-2.5 pr-4 align-top ${
-    expanded
-      ? "sticky top-9 z-[1] bg-surface shadow-[inset_0_-1px_0_var(--qt-rule)]"
-      : "border-b border-rule"
-  }`;
+}
+
+function Row({
+  row,
+  selected,
+  onOpen,
+  buttonRef,
+}: {
+  row: FixRow;
+  selected: boolean;
+  onOpen: () => void;
+  buttonRef: (el: HTMLButtonElement | null) => void;
+}) {
+  const { lead: f, members } = row;
+  const tier = TIER[f.classification.tier];
+  const family = variantLabel(f);
+  const flags = rowFlags(row);
+  const cell = "border-b border-rule py-2.5 pr-4 align-top";
 
   return (
-    <tr onClick={onToggle} className={`cursor-pointer transition-colors ${expanded ? "bg-surface" : "hover:bg-surface"}`}>
+    <tr onClick={onOpen} className={`cursor-pointer transition-colors hover:bg-surface ${selected ? "bg-surface" : ""}`}>
       <td className={`${cell} pl-3`}>
         <span className="inline-flex items-center gap-2 font-semibold whitespace-nowrap" style={{ color: tier.color }} title={tier.threat}>
           <TierGlyph tier={f.classification.tier} />
@@ -265,23 +355,181 @@ function Row({ row, expanded, onToggle }: { row: FixRow; expanded: boolean; onTo
       </td>
       <td className={`${cell} py-2 pr-2 text-right`}>
         <button
+          ref={buttonRef}
           type="button"
-          aria-expanded={expanded}
-          aria-label={`${expanded ? "Hide" : "Show"} details for ${algorithmLabel(f)} at ${
+          aria-haspopup="dialog"
+          aria-label={`Open details for ${algorithmLabel(f)} at ${
             members.length === 1 ? placeLabel(f) : `${members.length} places`
           }`}
           onClick={(e) => {
             e.stopPropagation();
-            onToggle();
+            onOpen();
           }}
           className="grid size-8 place-items-center rounded-lg text-ink-muted hover:bg-raise hover:text-ink"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden className={`transition-transform ${expanded ? "rotate-180" : ""}`}>
-            <path d="m2 4 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" />
-          </svg>
+          <Chevron dir="right" />
         </button>
       </td>
     </tr>
+  );
+}
+
+type Tab = "details" | "cbom" | "fix";
+
+/** A code finding with lines to send: what "Fix with AI" can rewrite. */
+const hasSnippet = (f: Finding) => f.asset.evidence.source_type === "code" && !!f.asset.evidence.snippet;
+
+/**
+ * One row in a modal side panel with a single scroll of its own. The arrows (or the arrow keys)
+ * step through the rows in table order without closing it.
+ */
+function FindingPanel({
+  row,
+  index,
+  total,
+  scanId,
+  onStep,
+  onClose,
+}: {
+  row: FixRow;
+  index: number;
+  total: number;
+  scanId: string;
+  onStep: (to: number) => void;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const pressedBackdrop = useRef(false);
+  const [tab, setTab] = useState<Tab>("details");
+  // Offered wherever the row has code to rewrite (the tab says so when the API has AI fixes off).
+  // Stepping to a row without code falls back to the details.
+  const fixable = row.members.some(hasSnippet);
+  const shown: Tab = tab === "fix" && !fixable ? "details" : tab;
+  useEffect(() => {
+    const d = dialog.current;
+    if (d && !d.open) {
+      d.showModal();
+      d.focus(); // the panel itself, not its first button: no focus ring after a tap
+    }
+  }, []);
+
+  const { lead: f } = row;
+  const tier = TIER[f.classification.tier];
+  const family = variantLabel(f);
+  const flags = rowFlags(row);
+
+  return (
+    <dialog
+      ref={dialog}
+      tabIndex={-1}
+      aria-labelledby="finding-title"
+      onCancel={(e) => {
+        e.preventDefault(); // Escape: let React unmount it
+        onClose();
+      }}
+      // A click that starts and ends on the backdrop closes; a text selection dragged out of it doesn't.
+      onMouseDown={(e) => {
+        pressedBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (pressedBackdrop.current && e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        if (e.target instanceof Element && e.target.closest("input, select, textarea")) return;
+        if (e.key === "ArrowLeft" && index > 0) onStep(index - 1);
+        if (e.key === "ArrowRight" && index < total - 1) onStep(index + 1);
+      }}
+      className="fixed inset-y-0 right-0 left-auto h-full max-h-full w-full max-w-full overflow-hidden border-l border-rule-strong bg-ground p-0 text-ink outline-none backdrop:bg-[rgba(4,6,9,0.72)] sm:w-[min(780px,92vw)]"
+    >
+      <div className="flex h-full flex-col">
+        <header className="grid gap-4 border-b border-rule px-5 pt-3 pb-4 sm:px-7">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center gap-2 font-semibold whitespace-nowrap" style={{ color: tier.color }} title={tier.threat}>
+                <TierGlyph tier={f.classification.tier} />
+                {tier.label}
+              </span>
+              <span className="tag" style={FIX_TAG[row.fixBy]}>{FIX_BY[row.fixBy].label}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className={ICON_BTN}
+                aria-label="Previous finding"
+                title="Previous finding (←)"
+                disabled={index === 0}
+                onClick={() => onStep(index - 1)}
+              >
+                <Chevron dir="left" />
+              </button>
+              <span className="px-1 text-[13px] text-ink-muted tabular-nums">
+                {index + 1} of {total}
+              </span>
+              <button
+                type="button"
+                className={ICON_BTN}
+                aria-label="Next finding"
+                title="Next finding (→)"
+                disabled={index === total - 1}
+                onClick={() => onStep(index + 1)}
+              >
+                <Chevron dir="right" />
+              </button>
+              <button type="button" className={`${ICON_BTN} ml-2`} aria-label="Close" title="Close (Esc)" onClick={onClose}>
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+                  <path d="m2 2 10 10M12 2 2 12" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <h2 id="finding-title" className="font-display text-[26px] leading-tight font-bold tracking-[-0.02em]">
+              {algorithmLabel(f)}
+            </h2>
+            {family && <span className="font-mono text-[13px] text-ink-muted">{family}</span>}
+            {flags.length > 0 && <span className="font-mono text-xs text-medium">{flags.join(" · ")}</span>}
+            {f.classification.hndl && <span className="text-sm text-ink-muted">Exposed to harvest-now, decrypt-later</span>}
+            <span className="text-sm text-ink-muted">
+              {usageLabel(f.asset.usage)} · {placesNote(row)}
+            </span>
+          </div>
+          <div role="group" aria-label="Show" className="seg justify-self-start">
+            <button type="button" className="seg-btn" aria-pressed={shown === "details"} onClick={() => setTab("details")}>
+              Details
+            </button>
+            <button type="button" className="seg-btn" aria-pressed={shown === "cbom"} onClick={() => setTab("cbom")}>
+              CBOM component
+            </button>
+            {fixable && (
+              <button type="button" className="seg-btn" aria-pressed={shown === "fix"} onClick={() => setTab("fix")}>
+                <WrenchIcon />
+                Fix with AI
+              </button>
+            )}
+          </div>
+        </header>
+        <PanelBody key={row.key} row={row} tab={shown} scanId={scanId} />
+      </div>
+    </dialog>
+  );
+}
+
+/** The panel's scrolling part. Keyed by row, so stepping resets the place and the scroll. */
+function PanelBody({ row, tab, scanId }: { row: FixRow; tab: Tab; scanId: string }) {
+  const [pick, setPick] = useState(0);
+  const place = row.members[Math.min(pick, row.members.length - 1)] ?? row.lead;
+  return (
+    // Keyed by tab too: each tab opens at its top.
+    <div key={tab} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-5 pb-10 sm:px-7">
+      {tab === "details" ? (
+        <FindingDetail row={row} place={place} onPick={setPick} />
+      ) : tab === "cbom" ? (
+        <CbomComponent key={place.id} scanId={scanId} row={row} place={place} onPick={setPick} />
+      ) : (
+        <FixWithAi scanId={scanId} row={row} place={place} onPick={setPick} />
+      )}
+    </div>
   );
 }
 
@@ -307,23 +555,16 @@ function placesNote(row: FixRow): string {
   return `Same ${usage} in ${members.length} ${code ? "files" : "places"}${across}${sessions}`;
 }
 
-function FindingDetail({ row, scanId }: { row: FixRow; scanId: string }) {
-  const [pick, setPick] = useState(0);
+function FindingDetail({ row, place, onPick }: { row: FixRow; place: Finding; onPick: (index: number) => void }) {
   const [allPlaces, setAllPlaces] = useState(false);
-  const [cbomOpen, setCbomOpen] = useState(false);
   const { lead: f, members } = row;
   const c = f.classification;
   const tier = TIER[c.tier];
-  const place = members[Math.min(pick, members.length - 1)] ?? f;
   const shownPlaces = allPlaces ? members : members.slice(0, PLACES_SHOWN);
   const refs = standards(c);
-  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0, staleTime: 60_000 });
-  const canFix = health.data?.ai_fix === true && place.asset.evidence.source_type === "code" && !!place.asset.evidence.snippet;
-  const fix = useMutation({ mutationKey: ["fix", scanId, place.id], mutationFn: () => api.suggestFix(scanId, place.id) });
-  const fixed = fix.data?.finding_id === place.id ? fix.data : undefined;
 
   return (
-    <div className="qt-fade grid gap-7 border-b border-rule-strong bg-surface px-4 pt-5 pb-8 sm:pr-6 lg:pl-[122px]">
+    <div className="grid gap-7">
       <div className="grid min-w-0 gap-2.5">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
           <span className="font-semibold">Where it is</span>
@@ -336,10 +577,7 @@ function FindingDetail({ row, scanId }: { row: FixRow; scanId: string }) {
                 key={m.id}
                 type="button"
                 aria-pressed={place.id === m.id}
-                onClick={() => {
-                  setPick(k);
-                  fix.reset();
-                }}
+                onClick={() => onPick(k)}
                 className={`min-h-9 rounded-lg border px-3 font-mono text-[12.5px] ${
                   place.id === m.id ? "border-ink bg-raise text-ink" : "border-rule text-ink-muted hover:border-rule-strong hover:text-ink"
                 }`}
@@ -362,7 +600,7 @@ function FindingDetail({ row, scanId }: { row: FixRow; scanId: string }) {
         <EvidenceView key={place.id} finding={place} />
       </div>
 
-      <div className="grid gap-x-8 gap-y-5 [grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))]">
+      <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
         <Fact label="Quantum threat" value={threatLabel(f)} sub={c.rationale} color={c.tier === "critical" ? tier.color : undefined} />
         <Fact label="Strength" value={strengthLabel(f)} sub={strengthNote(f)} />
         <Fact label="Exposure" value={EXPOSURE_LABEL[f.asset.exposure] ?? f.asset.exposure} sub={exposureNote(f)} />
@@ -382,56 +620,25 @@ function FindingDetail({ row, scanId }: { row: FixRow; scanId: string }) {
         )}
       </dl>
 
-      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-t border-rule pt-5">
-        <div className="grid min-w-0 flex-[1_1_360px] gap-1.5">
-          <span className="text-[13px] text-ink-muted">Replace with</span>
-          <span className="text-[19px] leading-snug font-[650]">
-            {c.replacement ?? (c.tier === "safe" ? "Nothing, this holds up" : "No drop-in replacement; redesign required")}
+      <div className="grid min-w-0 gap-1.5 border-t border-rule pt-5">
+        <span className="text-[13px] text-ink-muted">Replace with</span>
+        <span className="text-[19px] leading-snug font-[650]">
+          {c.replacement ?? (c.tier === "safe" ? "Nothing, this holds up" : "No drop-in replacement; redesign required")}
+        </span>
+        {refs.length > 0 && (
+          <span className="mt-0.5 flex flex-wrap gap-1.5">
+            {refs.map((r) => (
+              <span
+                key={r.text}
+                className="rounded border px-2 py-[3px] font-mono text-xs"
+                style={r.pqc ? { borderColor: "var(--qt-safe)", color: "var(--qt-safe)" } : { borderColor: "var(--qt-rule-strong)", color: "var(--qt-ink-muted)" }}
+              >
+                {r.text}
+              </span>
+            ))}
           </span>
-          {refs.length > 0 && (
-            <span className="mt-0.5 flex flex-wrap gap-1.5">
-              {refs.map((r) => (
-                <span
-                  key={r.text}
-                  className="rounded border px-2 py-[3px] font-mono text-xs"
-                  style={r.pqc ? { borderColor: "var(--qt-safe)", color: "var(--qt-safe)" } : { borderColor: "var(--qt-rule-strong)", color: "var(--qt-ink-muted)" }}
-                >
-                  {r.text}
-                </span>
-              ))}
-            </span>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-        {canFix && !fixed && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={fix.isPending}
-            onClick={() => fix.mutate()}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />
-            </svg>
-            {fix.isPending ? "Writing a fix…" : "Fix me"}
-          </button>
         )}
-        <button type="button" className="btn" aria-expanded={cbomOpen} onClick={() => setCbomOpen((o) => !o)}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M8 4H6a2 2 0 0 0-2 2v4l-2 2 2 2v4a2 2 0 0 0 2 2h2" />
-            <path d="M16 4h2a2 2 0 0 1 2 2v4l2 2-2 2v4a2 2 0 0 1-2 2h-2" />
-          </svg>
-          {cbomOpen ? "Hide CBOM" : "View CBOM component"}
-        </button>
-        </div>
       </div>
-
-      {fix.isError && (
-        <p role="alert" className="m-0 text-sm" style={{ color: "var(--qt-critical)" }}>{fixError(fix.error)}</p>
-      )}
-      {fixed && <FixPanel fix={fixed} />}
-
-      {cbomOpen && <CbomComponent scanId={scanId} finding={place} />}
     </div>
   );
 }
@@ -617,29 +824,110 @@ function MarkedLine({ text, match, color }: { text: string; match: string | null
   );
 }
 
-/** Where the CBOM records a piece of evidence (see cbom/cyclonedx.py). */
-function occurrenceAt(e: Evidence): string {
-  const ctx = e.context ?? {};
-  if (ctx.json_path) return `${e.location}#${ctx.json_path}`;
-  if (ctx.packet) return `${e.location}/packet-${ctx.packet}`;
-  return e.location;
-}
-
-type CbomOccurrence = { location?: unknown; line?: unknown };
-type CbomEntry = { evidence?: { occurrences?: CbomOccurrence[] } };
-
-function findComponent(cbom: Record<string, unknown> | undefined, e: Evidence): unknown {
-  const components = Array.isArray(cbom?.components) ? (cbom.components as CbomEntry[]) : [];
-  const at = occurrenceAt(e);
-  return components.find((c) =>
-    c.evidence?.occurrences?.some((o) => o.location === at && (o.line ?? null) === (e.line ?? null)),
+/** Which of a row's places a tab shows, when the row has more than one. */
+function PlaceSelect({ row, place, onPick }: { row: FixRow; place: Finding; onPick: (index: number) => void }) {
+  if (row.members.length < 2) return null;
+  return (
+    <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-ink-muted">
+      For
+      <select
+        value={place.id}
+        onChange={(e) => onPick(row.members.findIndex((m) => m.id === e.target.value))}
+        className="min-h-9 max-w-full min-w-0 rounded-lg border border-rule-strong bg-surface px-2 font-mono text-[12.5px] text-ink"
+      >
+        {row.members.map((m) => (
+          <option key={m.id} value={m.id}>{placeLabel(m)}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
-function CbomComponent({ scanId, finding }: { scanId: string; finding: Finding }) {
+function WrenchIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />
+    </svg>
+  );
+}
+
+/** "Fix with AI": the API sends this place's snippet to its model and returns a rewrite as a diff. */
+function FixWithAi({
+  scanId,
+  row,
+  place,
+  onPick,
+}: {
+  scanId: string;
+  row: FixRow;
+  place: Finding;
+  onPick: (index: number) => void;
+}) {
+  // A query run on demand rather than a mutation: each place keeps its fix while the reader
+  // switches tabs or steps through rows, so coming back doesn't ask the model again.
+  const fix = useQuery({
+    queryKey: ["fix", scanId, place.id],
+    queryFn: () => api.suggestFix(scanId, place.id),
+    enabled: false,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0, staleTime: 60_000 });
+  const aiOn = health.data?.ai_fix === true;
+  const canSend = hasSnippet(place);
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid gap-0.5">
+          <span className="font-semibold">Suggested fix</span>
+          <span className="text-[13px] text-ink-muted">The API sends these lines to its AI model and shows the rewrite as a diff.</span>
+        </div>
+        {canSend && !fix.data && (
+          <button type="button" className="btn btn-sm btn-primary" disabled={!aiOn || fix.isFetching} onClick={() => void fix.refetch()}>
+            <WrenchIcon />
+            {fix.isFetching ? "Writing a fix…" : "Fix with AI"}
+          </button>
+        )}
+      </div>
+      <PlaceSelect row={row} place={place} onPick={onPick} />
+      {health.isSuccess && !aiOn && (
+        <p className="m-0 text-sm text-ink-muted">
+          AI fixes are off on this API. Set <span className="font-mono text-ink-soft">GEMINI_API_KEY</span> where the API
+          runs to turn them on.
+        </p>
+      )}
+      {!canSend ? (
+        <p className="text-sm text-ink-muted">This place has no code snippet to send, so there is nothing to rewrite. Pick another place.</p>
+      ) : fix.data ? (
+        <FixPanel fix={fix.data} />
+      ) : (
+        <>
+          {fix.isError && !fix.isFetching && (
+            <p role="alert" className="m-0 text-sm" style={{ color: "var(--qt-critical)" }}>{fixError(fix.error)}</p>
+          )}
+          <CodeSnippet finding={place} evidence={place.asset.evidence} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function CbomComponent({
+  scanId,
+  row,
+  place,
+  onPick,
+}: {
+  scanId: string;
+  row: FixRow;
+  place: Finding;
+  onPick: (index: number) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const cbom = useQuery({ queryKey: ["cbom", scanId], queryFn: () => api.getCbom(scanId), staleTime: Infinity });
-  const component = findComponent(cbom.data, finding.asset.evidence);
+  const component = findComponent(cbom.data, place);
   const json = component ? JSON.stringify(component, null, 2) : "";
   // A CycloneDX document of its own: the scan's CBOM header with only this component. It drops
   // the serial number, which names the full CBOM.
@@ -652,22 +940,13 @@ function CbomComponent({ scanId, finding }: { scanId: string; finding: Finding }
   };
 
   return (
-    <div className="qt-fade grid gap-3 rounded-xl border border-rule-strong bg-ground p-[18px]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="font-semibold">CBOM component</span>
-        <span className="text-xs text-ink-faint">CycloneDX 1.6 · one occurrence per place, mapped to NIST</span>
-      </div>
-      {cbom.isPending ? (
-        <p className="qt-live text-sm text-ink-muted">Building the CBOM…</p>
-      ) : cbom.isError ? (
-        <p role="alert" className="text-sm">The CBOM didn’t load: {cbom.error.message}. Try again in a moment.</p>
-      ) : !component ? (
-        <p className="text-sm text-ink-muted">This finding isn’t in the CBOM for this scan.</p>
-      ) : (
-        <>
-          <pre className="code-block max-h-[420px] overflow-auto">
-            <code className="block px-4 whitespace-pre text-ink-soft">{json}</code>
-          </pre>
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid gap-0.5">
+          <span className="font-semibold">CycloneDX 1.6 component</span>
+          <span className="text-[13px] text-ink-muted">One occurrence per place, mapped to NIST.</span>
+        </div>
+        {component !== undefined && (
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-sm btn-primary" onClick={download}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -687,7 +966,19 @@ function CbomComponent({ scanId, finding }: { scanId: string; finding: Finding }
               {copied ? "Copied" : "Copy JSON"}
             </button>
           </div>
-        </>
+        )}
+      </div>
+      <PlaceSelect row={row} place={place} onPick={onPick} />
+      {cbom.isPending ? (
+        <p className="qt-live text-sm text-ink-muted">Building the CBOM…</p>
+      ) : cbom.isError ? (
+        <p role="alert" className="text-sm">The CBOM didn’t load: {cbom.error.message}. Try again in a moment.</p>
+      ) : !component ? (
+        <p className="text-sm text-ink-muted">This finding isn’t in the CBOM for this scan.</p>
+      ) : (
+        <pre className="code-block">
+          <code className="block px-4 whitespace-pre text-ink-soft">{json}</code>
+        </pre>
       )}
     </div>
   );

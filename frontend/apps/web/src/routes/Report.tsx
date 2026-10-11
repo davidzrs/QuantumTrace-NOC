@@ -1,6 +1,6 @@
 import type { RiskScore, RiskTier, ScanResult } from "@quantumtrace/sdk";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ExposurePanels } from "../components/ExposurePanels";
 import { FindingsTable } from "../components/FindingsTable";
@@ -38,9 +38,15 @@ export function Report() {
 function ReportBody({ result }: { result: ScanResult }) {
   const [source, setSource] = useState<Source | undefined>();
   const [tier, setTier] = useState<RiskTier | undefined>();
+  // The list's own source filter, picked on the debt strip; the switch above scopes the whole report.
+  const [listSource, setListSource] = useState<Source | undefined>();
   const [query, setQuery] = useState("");
   const all = result.findings;
-  const findings = source ? all.filter((f) => f.asset.evidence.source_type === source) : all;
+  // Stable between renders: the findings table keeps its page until the list itself changes.
+  const findings = useMemo(
+    () => (source ? all.filter((f) => f.asset.evidence.source_type === source) : all),
+    [all, source],
+  );
   const bySource = (s: Source) => all.filter((f) => f.asset.evidence.source_type === s).length;
   const count = (t: RiskTier) => findings.filter((f) => f.classification.tier === t).length;
   const total = findings.length;
@@ -53,8 +59,12 @@ function ReportBody({ result }: { result: ScanResult }) {
   const notes = result.limitations.filter((n) => !source || (noteSource(n.scanner) ?? source) === source);
   const noCapture = bySource("network") === 0;
 
+  const pickSource = (s: Source | undefined) => {
+    setSource(s);
+    setListSource(undefined);
+  };
   const showFile = (path: string) => {
-    setSource(undefined);
+    pickSource(undefined);
     setTier(undefined);
     setQuery(path);
     document.getElementById("fixes")?.scrollIntoView({ behavior: smoothScroll() });
@@ -78,7 +88,7 @@ function ReportBody({ result }: { result: ScanResult }) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             {all.length > 0 ? (
               <div role="group" aria-label="Show findings from" className="seg">
-                <button type="button" className="seg-btn" aria-pressed={!source} onClick={() => setSource(undefined)}>
+                <button type="button" className="seg-btn" aria-pressed={!source} onClick={() => pickSource(undefined)}>
                   All sources<span className="font-mono text-xs opacity-75">{all.length}</span>
                 </button>
                 {SOURCES.map((s) => {
@@ -91,7 +101,7 @@ function ReportBody({ result }: { result: ScanResult }) {
                       aria-pressed={source === s}
                       disabled={n === 0}
                       title={n === 0 ? `No ${SOURCE_LABEL[s].toLowerCase()} in this scan` : undefined}
-                      onClick={() => setSource(s)}
+                      onClick={() => pickSource(s)}
                     >
                       {SOURCE_LABEL[s]}
                       <span className="font-mono text-xs opacity-75">{n || "–"}</span>
@@ -176,7 +186,17 @@ function ReportBody({ result }: { result: ScanResult }) {
         )}
 
         {total > 0 && (
-          <TickStrip key={source ?? "all"} findings={findings} focus={tier} onSelectTier={(t) => setTier(tier === t ? undefined : t)} />
+          <TickStrip
+            key={source ?? "all"}
+            findings={findings}
+            focus={tier}
+            focusSource={listSource}
+            onSelect={(t, s) => {
+              const same = tier === t && listSource === s; // clicking the selection again clears it
+              setTier(same ? undefined : t);
+              setListSource(same ? undefined : s);
+            }}
+          />
         )}
       </div>
 
@@ -187,6 +207,8 @@ function ReportBody({ result }: { result: ScanResult }) {
             findings={findings}
             tier={tier}
             onTierChange={setTier}
+            source={listSource}
+            onSourceChange={setListSource}
             query={query}
             onQueryChange={setQuery}
           />
