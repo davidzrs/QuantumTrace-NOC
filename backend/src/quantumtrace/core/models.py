@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Model(BaseModel):
@@ -219,10 +220,33 @@ class TierCounts(Model):
     unknown: int = 0
 
 
+GRADES = ((2.0, "A"), (4.0, "B"), (6.0, "C"), (8.0, "D"))  # below each bound; F from 8
+
+
+def grade_for(value: float) -> str:
+    return next((g for limit, g in GRADES if value < limit), "F")
+
+
 class RiskScore(Model):
-    value: float = Field(ge=0, le=100, description="0 = quantum-ready, 100 = maximum exposure")
+    value: float = Field(
+        ge=0, le=10, description="0 = quantum-ready, 10 = maximum exposure, to one decimal"
+    )
     grade: str
     counts: TierCounts
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_old_scale(cls, data: Any) -> Any:
+        """Reports stored before the score went 0-10 (they're kept 30 days) hold 0-100 values.
+        A value over 10, or one whose grade doesn't fit it on 0-10 (an old 5.0 was an A), is read
+        as 0-100. Below 2 both scales say A and it's left alone: either way it's near zero."""
+        if isinstance(data, dict):
+            value, grade = data.get("value"), data.get("grade")
+            if isinstance(value, int | float) and (
+                value > 10 or (isinstance(grade, str) and grade != grade_for(value))
+            ):
+                return {**data, "value": round(value / 10, 1)}
+        return data
 
 
 class ScanResult(Model):

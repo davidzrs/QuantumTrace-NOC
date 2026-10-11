@@ -13,6 +13,7 @@ import {
   EXPOSURE_LABEL,
   evidenceLabel,
   observationLabel,
+  observationNote,
   runtimeNote,
   placeLabel,
   plural,
@@ -412,9 +413,6 @@ function FindingPanel({
   // Stepping to a row without code falls back to the details.
   const fixable = row.members.some(hasSnippet);
   const shown: Tab = tab === "fix" && !fixable ? "details" : tab;
-  // The shortcut on the flagged line only shows when the API can actually write a fix.
-  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0, staleTime: 60_000 });
-  const onFix = fixable && health.data?.ai_fix !== false ? () => setTab("fix") : undefined;
   useEffect(() => {
     const d = dialog.current;
     if (d && !d.open) {
@@ -527,7 +525,7 @@ function FindingPanel({
             )}
           </div>
         </header>
-        <PanelBody key={row.key} row={row} tab={shown} scanId={scanId} libraries={libraries} onFix={onFix} />
+        <PanelBody key={row.key} row={row} tab={shown} scanId={scanId} libraries={libraries} />
       </div>
     </dialog>
   );
@@ -539,13 +537,11 @@ function PanelBody({
   tab,
   scanId,
   libraries,
-  onFix,
 }: {
   row: FixRow;
   tab: Tab;
   scanId: string;
   libraries: CryptoLibrary[];
-  onFix?: () => void;
 }) {
   const [pick, setPick] = useState(0);
   const place = row.members[Math.min(pick, row.members.length - 1)] ?? row.lead;
@@ -553,7 +549,7 @@ function PanelBody({
     // Keyed by tab too: each tab opens at its top.
     <div key={tab} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-5 pb-10 sm:px-7">
       {tab === "details" ? (
-        <FindingDetail row={row} place={place} onPick={setPick} libraries={libraries} onFix={onFix} />
+        <FindingDetail row={row} place={place} onPick={setPick} libraries={libraries} />
       ) : tab === "cbom" ? (
         <CbomComponent key={place.id} scanId={scanId} row={row} place={place} onPick={setPick} />
       ) : (
@@ -590,14 +586,11 @@ function FindingDetail({
   place,
   onPick,
   libraries,
-  onFix,
 }: {
   row: FixRow;
   place: Finding;
   onPick: (index: number) => void;
   libraries: CryptoLibrary[];
-  /** Opens the AI fix for this place, from a shortcut on its flagged line. */
-  onFix?: () => void;
 }) {
   const [allPlaces, setAllPlaces] = useState(false);
   const { lead: f, members } = row;
@@ -641,7 +634,7 @@ function FindingDetail({
             )}
           </div>
         )}
-        <EvidenceView key={place.id} finding={place} onFix={hasSnippet(place) ? onFix : undefined} />
+        <EvidenceView key={place.id} finding={place} />
       </div>
 
       <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
@@ -653,7 +646,7 @@ function FindingDetail({
         />
         <Fact label="Strength" value={strengthLabel(f)} sub={strengthNote(f)} />
         <Fact label="Exposure" value={EXPOSURE_LABEL[f.asset.exposure] ?? f.asset.exposure} sub={exposureNote(f)} />
-        <Fact label="Evidence" value={observationLabel(f.asset.observation)} sub={confidenceLabel(f.asset.confidence)} />
+        <Fact label="Evidence" value={observationLabel(f.asset.observation)} sub={observationNote(f.asset.observation)} />
       </div>
 
       <dl className="-mt-3 flex flex-wrap gap-x-8 gap-y-2 text-[13px]">
@@ -684,25 +677,59 @@ function FindingDetail({
         )}
       </dl>
 
-      <div className="grid min-w-0 gap-1.5 border-t border-rule pt-5">
-        <span className="text-[13px] text-ink-muted">Replace with</span>
-        <span className="text-[19px] leading-snug font-[650]">
-          {c.replacement ?? (c.tier === "safe" ? "Nothing, this holds up" : "No drop-in replacement; redesign required")}
-        </span>
-        {refs.length > 0 && (
-          <span className="mt-0.5 flex flex-wrap gap-1.5">
-            {refs.map((r) => (
-              <span
-                key={r.text}
-                className="rounded border px-2 py-[3px] font-mono text-xs"
-                style={r.pqc ? { borderColor: "var(--qt-safe)", color: "var(--qt-safe)" } : { borderColor: "var(--qt-rule-strong)", color: "var(--qt-ink-muted)" }}
-              >
-                {r.text}
-              </span>
-            ))}
+      <div className="grid gap-x-10 gap-y-6 border-t border-rule pt-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,15rem)]">
+        <div className="grid min-w-0 content-start gap-1.5">
+          <span className="text-[13px] text-ink-muted">Replace with</span>
+          <span className="text-[19px] leading-snug font-[650]">
+            {c.replacement ?? (c.tier === "safe" ? "Nothing, this holds up" : "No drop-in replacement; redesign required")}
           </span>
-        )}
+          {refs.length > 0 && (
+            <span className="mt-0.5 flex flex-wrap gap-1.5">
+              {refs.map((r) => (
+                <span
+                  key={r.text}
+                  className="rounded border px-2 py-[3px] font-mono text-xs"
+                  style={r.pqc ? { borderColor: "var(--qt-safe)", color: "var(--qt-safe)" } : { borderColor: "var(--qt-rule-strong)", color: "var(--qt-ink-muted)" }}
+                >
+                  {r.text}
+                </span>
+              ))}
+            </span>
+          )}
+        </div>
+        <ConfidenceMeter level={place.asset.confidence} />
       </div>
+    </div>
+  );
+}
+
+type ConfidenceLevel = Finding["asset"]["confidence"];
+
+const CONFIDENCE: Record<ConfidenceLevel, { label: string; bars: number; note: string }> = {
+  high: { label: "High", bars: 3, note: "Read directly from the input." },
+  medium: { label: "Medium", bars: 2, note: "Inferred, e.g. a key size taken from elsewhere in the file." },
+  low: { label: "Low", bars: 1, note: "The input can’t confirm it, e.g. a random number that may not be a secret. Check it by hand." },
+};
+
+/** How sure the scanner is of this place: three bars in ink, never a risk colour. */
+function ConfidenceMeter({ level }: { level: ConfidenceLevel }) {
+  const c = CONFIDENCE[level];
+  return (
+    <div className="grid min-w-0 content-start gap-1.5">
+      <span className="text-[13px] text-ink-muted">Confidence</span>
+      <span className="flex items-center gap-2.5">
+        <span aria-hidden className="flex items-end gap-[3px]">
+          {[1, 2, 3].map((i) => (
+            <span
+              key={i}
+              className="w-[5px] rounded-[1px]"
+              style={{ height: 5 + i * 4, background: i <= c.bars ? "var(--qt-ink)" : "var(--qt-rule-strong)" }}
+            />
+          ))}
+        </span>
+        <span className="text-[19px] leading-snug font-[650]">{c.label}</span>
+      </span>
+      <span className="text-[13px] leading-[1.45] text-ink-muted">{c.note}</span>
     </div>
   );
 }
@@ -776,10 +803,10 @@ function strengthNote(f: Finding): string {
 }
 
 /** The flagged source with its neighbours, or the cloud or network context it was read from. */
-function EvidenceView({ finding: f, onFix }: { finding: Finding; onFix?: () => void }) {
+function EvidenceView({ finding: f }: { finding: Finding }) {
   const e = f.asset.evidence;
   const [allSessions, setAllSessions] = useState(false);
-  if (e.snippet) return <SnippetList finding={f} onFix={onFix} />;
+  if (e.snippet) return <SnippetList finding={f} />;
   const context = Object.entries(e.context ?? {}).filter(([, v]) => v);
   const more = f.asset.more_evidence;
   const shown = allSessions ? more : more.slice(0, SESSIONS_SHOWN);
@@ -823,17 +850,16 @@ function EvidenceView({ finding: f, onFix }: { finding: Finding; onFix?: () => v
 const SNIPPETS_SHOWN = 3;
 
 /** One snippet per line the asset was seen on in this file (repeats are in `more_evidence`). */
-function SnippetList({ finding: f, onFix }: { finding: Finding; onFix?: () => void }) {
+function SnippetList({ finding: f }: { finding: Finding }) {
   const [all, setAll] = useState(false);
   const places = [f.asset.evidence, ...f.asset.more_evidence];
   const shown = all ? places : places.slice(0, SNIPPETS_SHOWN);
-  if (places.length === 1) return <CodeSnippet finding={f} evidence={f.asset.evidence} onFix={onFix} />;
+  if (places.length === 1) return <CodeSnippet finding={f} evidence={f.asset.evidence} />;
   return (
     <div className="grid min-w-0 gap-3">
       <span className="text-[13px] text-ink-muted">Seen on {places.length} lines</span>
       {shown.map((e, i) => (
-        // The fix rewrites the first line's snippet, so only that one offers it.
-        <CodeSnippet key={i} finding={f} evidence={e} onFix={i === 0 ? onFix : undefined} />
+        <CodeSnippet key={i} finding={f} evidence={e} />
       ))}
       {places.length > SNIPPETS_SHOWN && (
         <button type="button" aria-expanded={all} onClick={() => setAll((a) => !a)} className="link justify-self-start text-sm font-semibold">
@@ -844,7 +870,7 @@ function SnippetList({ finding: f, onFix }: { finding: Finding; onFix?: () => vo
   );
 }
 
-function CodeSnippet({ finding: f, evidence: e, onFix }: { finding: Finding; evidence: Evidence; onFix?: () => void }) {
+function CodeSnippet({ finding: f, evidence: e }: { finding: Finding; evidence: Evidence }) {
   if (!e.snippet) return null;
   const meta = TIER[f.classification.tier];
   const first = e.snippet_start_line ?? e.line ?? 1;
@@ -868,27 +894,19 @@ function CodeSnippet({ finding: f, evidence: e, onFix }: { finding: Finding; evi
           {lines.map((text, i) => {
             const n = first + i;
             const hit = n === e.line;
-            const chip = hit && onFix;
             return (
               <span
                 key={n}
-                className={`${chip ? "flex items-center" : "block"} ${hit ? "font-medium text-white" : "text-ink-soft"}`}
+                className={`block ${hit ? "font-medium text-white" : "text-ink-soft"}`}
                 style={hit ? { background: meta.wash, boxShadow: `inset 3px 0 ${meta.color}` } : undefined}
               >
-                <span className="inline-block w-11 flex-none pr-4 text-right text-ink-ghost tabular-nums select-none" aria-hidden>
+                <span className="inline-block w-11 pr-4 text-right text-ink-ghost tabular-nums select-none" aria-hidden>
                   {n}
                 </span>
                 <span className="pr-6 whitespace-pre">
                   {hit && <span className="sr-only">Flagged line {n}: </span>}
                   {hit ? <MarkedLine text={text} match={e.end_column != null ? f.asset.observed : null} color={meta.color} /> : text || " "}
                 </span>
-                {chip && (
-                  // Sticky, so it stays in view at the right edge when a long line scrolls.
-                  <button type="button" onClick={onFix} className="ai-chip sticky right-3 mr-3 ml-auto">
-                    <SparkleIcon size={12} />
-                    <span className="ai-text">{AI_LABEL}</span>
-                  </button>
-                )}
               </span>
             );
           })}

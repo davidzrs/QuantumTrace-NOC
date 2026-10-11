@@ -1377,10 +1377,10 @@
         "properties": {
           "value": {
             "type": "number",
-            "maximum": 100.0,
+            "maximum": 10.0,
             "minimum": 0.0,
             "title": "Value",
-            "description": "0 = quantum-ready, 100 = maximum exposure"
+            "description": "0 = quantum-ready, 10 = maximum exposure, to one decimal"
           },
           "grade": {
             "type": "string",

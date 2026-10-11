@@ -9,7 +9,15 @@ import pytest
 
 from quantumtrace.core.classifier import default_classifier
 from quantumtrace.core.engine import run_scan
-from quantumtrace.core.models import CryptoAsset, Evidence, Exposure, ScanResult, SourceType
+from quantumtrace.core.models import (
+    CryptoAsset,
+    Evidence,
+    Exposure,
+    RiskScore,
+    ScanResult,
+    SourceType,
+    grade_for,
+)
 from quantumtrace.core.scoring import finding_weight, score
 
 
@@ -26,7 +34,7 @@ def test_each_source_scores_its_own_findings(result: ScanResult) -> None:
     for source, source_score in result.score_by_source.items():
         subset = [f for f in result.findings if f.asset.evidence.source_type is source]
         assert source_score == score(subset)
-        assert 0 < source_score.value < 100
+        assert 0 < source_score.value < 10
 
 
 def test_source_counts_add_up_to_the_whole_scan(result: ScanResult) -> None:
@@ -66,3 +74,28 @@ def test_kms_encryption_key_ranks_above_signing_keys(samples: Path) -> None:
     enc = [finding_weight(f) for f in rsa if f.asset.usage == "ENCRYPT_DECRYPT"]
     sig = [finding_weight(f) for f in rsa if f.asset.usage == "SIGN_VERIFY"]
     assert enc and sig and min(enc) > max(sig)
+
+
+def test_score_is_out_of_ten_to_one_decimal(result: ScanResult) -> None:
+    for s in [result.score, *result.score_by_source.values()]:
+        assert 0 <= s.value <= 10
+        assert s.value == round(s.value, 1)
+        assert s.grade == grade_for(s.value)
+
+
+@pytest.mark.parametrize(
+    ("stored", "grade", "read"),
+    [
+        (40.1, "C", 4.0),  # an old 0-100 score
+        (5.0, "A", 0.5),  # old and under 10, but an A: 5.0 out of 10 would be a C
+        (5.6, "C", 5.6),  # already 0-10
+        (1.5, "A", 1.5),  # both scales say A: left alone
+    ],
+)
+def test_reports_stored_on_the_old_scale_read_out_of_ten(
+    stored: float, grade: str, read: float
+) -> None:
+    old = RiskScore.model_validate_json(
+        f'{{"value": {stored}, "grade": "{grade}", "counts": {{}}}}'
+    )
+    assert old.value == read
