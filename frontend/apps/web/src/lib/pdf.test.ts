@@ -19,6 +19,7 @@ function finding(n: number, tier: RiskTier, source: Source = "code", broken = fa
       flags: [],
       evidence: { source_type: source, location: `src/file${n}.py`, line: n, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
       more_evidence: [],
+      library: null,
     },
     classification: {
       rule_id: `rule-${n}`,
@@ -50,6 +51,7 @@ function scan(findings: Finding[], limitations: string[] = []): ScanResult {
     score_by_source: {},
     limitations: limitations.map((message) => ({ scanner: "code", message })),
     errors: [],
+    libraries: [],
   };
 }
 
