@@ -50,7 +50,7 @@ export function Shell() {
       </div>
       <footer className="mx-auto w-full max-w-[1240px] px-4 pb-8 sm:px-8">
         <div className="flex flex-wrap justify-between gap-3 border-t border-rule pt-5 text-[13px] text-ink-faint">
-          <span>Classifies against NIST FIPS 203, 204 and 205 · exports CycloneDX 1.6</span>
+          <span>Maps to NIST FIPS 203, 204 and 205 · exports CycloneDX 1.6</span>
           <span>JunctionX Lisbon 2026 · Inspiring Solutions</span>
         </div>
       </footer>

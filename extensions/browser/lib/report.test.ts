@@ -94,7 +94,7 @@ describe("summary", () => {
   });
 
   it("falls back to Grover, then all clear", () => {
-    expect(headline(result([finding("medium", "tls-cipher")]), "a.com")).toMatch(/1 finding is weakened/);
+    expect(headline(result([finding("medium", "tls-cipher")]), "a.com")).toMatch(/1 finding is Grover-weakened or legacy/);
     expect(headline(result([finding("safe", "tls-cipher")]), "a.com")).toMatch(/holds up/);
   });
 

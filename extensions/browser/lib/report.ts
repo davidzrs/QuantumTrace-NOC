@@ -54,7 +54,7 @@ export function headline(result: ScanResult, host: string): string {
   const total = result.findings.length;
   if (critical > 0) return `${critical} of ${total} findings on ${host} break under Shor's algorithm.`;
   if (medium > 0)
-    return `Nothing on ${host} breaks under Shor's algorithm, but ${medium} ${medium === 1 ? "finding is" : "findings are"} weakened by Grover's.`;
+    return `Nothing on ${host} breaks under Shor's algorithm, but ${medium} ${medium === 1 ? "finding is" : "findings are"} Grover-weakened or legacy.`;
   return `Everything QuantumTrace saw on ${host} holds up against known quantum attacks.`;
 }
 

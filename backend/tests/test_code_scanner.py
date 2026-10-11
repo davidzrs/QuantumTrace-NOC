@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from quantumtrace.core.classifier import load_misuse
+from quantumtrace.core.classifier import load_misuse, load_review
 from quantumtrace.core.engine import run_scan
 from quantumtrace.core.models import Confidence, Finding, Observation, ScanResult
 from quantumtrace.scanners.code.common import is_secret_name
@@ -242,7 +242,6 @@ def test_precise_variants_and_confidence(result: ScanResult) -> None:
         ("python/report_export.py", "hardcoded-key"),
         ("java/BatchExporter.java", "ecb-mode"),
         ("go/batch-pipeline/main.go", "ecb-mode"),
-        ("go/auth-gateway/main.go", "hand-rolled-crypto"),
     ],
 )
 def test_misuse_makes_finding_classically_broken(result: ScanResult, file: str, flag: str) -> None:
@@ -250,6 +249,18 @@ def test_misuse_makes_finding_classically_broken(result: ScanResult, file: str, 
     assert f.classification.classically_broken
     assert f.classification.tier.value != "critical"  # the quantum tier is unchanged
     assert load_misuse()[flag] in f.classification.rationale
+
+
+def test_hand_rolled_code_asks_for_review_without_calling_it_broken(result: ScanResult) -> None:
+    # auth-gateway's PBKDF2 loop is a correct implementation: home-made, not broken
+    [f] = [
+        f
+        for f in in_file(result, "go/auth-gateway/main.go")
+        if "hand-rolled-crypto" in f.asset.flags
+    ]
+    assert not f.classification.classically_broken
+    assert f.classification.tier.value == "safe"
+    assert load_review()["hand-rolled-crypto"] in f.classification.rationale
 
 
 def test_repeat_lines_become_more_evidence_with_snippets(result: ScanResult) -> None:

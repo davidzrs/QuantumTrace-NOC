@@ -234,7 +234,7 @@ export function ScanBench({
 
 function blockerFor(plan: Intake, limitMb: number | undefined): string | null {
   if (!plan.send.length)
-    return "Nothing here is something QuantumTrace reads. It scans .py, .java and .go source, AWS .json exports, .pcap captures and .zip archives.";
+    return "Nothing here is something QuantumTrace reads. It scans .py, .java and .go source, AWS .json exports, .pcap and .pcapng captures, server configs, certificates and keys, Java builds and .zip archives.";
   if (plan.send.length > MAX_FILES)
     return `That is ${plan.send.length} files and a scan takes up to ${MAX_FILES}. Zip the folder and add the .zip instead, or pick a subfolder.`;
   if (limitMb && plan.bytes > limitMb * MB)

@@ -10,7 +10,12 @@ pnpm -F @quantumtrace/web build   # dist/, plus the browser extension zips in pu
 ```
 
 The build also packages `extensions/browser` and `extensions/vscode` for the download buttons, so
-a change to either extension only reaches the site after this project redeploys.
+a change to either extension only reaches the site after this project redeploys. The VS Code
+package ships the backend's Python tracer, which is why the Docker image copies
+`backend/src/quantumtrace/tracers/python` too.
+
+The PDF summary is drawn in the browser (`src/lib/pdf.ts`, jsPDF) and jsPDF only downloads when
+someone exports, so reports don't load it.
 
 Deployed on Vercel with this folder as the project's root directory and `VITE_API_URL` set to the
 API project's URL. Vercel only rebuilds this project when something under this folder (or a

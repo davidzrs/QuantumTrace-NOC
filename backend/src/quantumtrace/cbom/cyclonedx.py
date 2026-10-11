@@ -105,7 +105,7 @@ def _bom_ref(f: Finding) -> str:
     variant = (
         f"/{f.asset.variant}" if f.asset.variant and c.primitive is not Primitive.PROTOCOL else ""
     )
-    # a hard-coded key or hand-rolled code is broken where the same algorithm elsewhere isn't
+    # a hard-coded key or ECB mode is broken where the same algorithm elsewhere isn't
     misused = "/misused" if set(f.asset.flags) & load_misuse().keys() else ""
     return re.sub(r"[^a-z0-9/.\-]+", "-", f"crypto/{rule}{size}{variant}{misused}".lower())
 

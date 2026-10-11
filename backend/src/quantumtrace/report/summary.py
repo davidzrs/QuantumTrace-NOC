@@ -14,7 +14,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from quantumtrace.core.models import Exposure, Finding, RiskTier, ScanResult, SourceType
+from quantumtrace.core.models import (
+    Exposure,
+    Finding,
+    Primitive,
+    QuantumThreat,
+    RiskTier,
+    ScanResult,
+    SourceType,
+)
 from quantumtrace.report.pdf import PAGE_H, PAGE_W, PT, Canvas, Rgb, pdf_text, rgb, text_width
 
 FIX_SHOWN = 8
@@ -36,7 +44,7 @@ TIER_RGB: dict[RiskTier, Rgb] = {
 TIERS = [RiskTier.CRITICAL, RiskTier.MEDIUM, RiskTier.UNKNOWN, RiskTier.SAFE]
 TIER_LABEL: dict[RiskTier, tuple[str, str]] = {
     RiskTier.CRITICAL: ("Critical", "Breakable by Shor"),
-    RiskTier.MEDIUM: ("Medium", "Weakened by Grover"),
+    RiskTier.MEDIUM: ("Medium", "Grover-weakened or legacy"),
     RiskTier.UNKNOWN: ("Unclassified", "No rule matches yet"),
     RiskTier.SAFE: ("Safe", "Quantum-resistant"),
 }
@@ -47,14 +55,22 @@ SOURCE_LABEL = {
     SourceType.NETWORK: "Network capture",
 }
 
-FixBy = Literal["now", "before-2030", "harden", "review", "none"]
+FixBy = Literal["now", "before-2030", "before-2035", "harden", "review", "none"]
 FIX_BY: dict[FixBy, tuple[int, str, Rgb]] = {
     "now": (0, "Fix now", TIER_RGB[RiskTier.CRITICAL]),
     "before-2030": (1, "Before 2030", TIER_RGB[RiskTier.CRITICAL]),
-    "harden": (2, "Harden", TIER_RGB[RiskTier.MEDIUM]),
-    "review": (3, "Review", TIER_RGB[RiskTier.UNKNOWN]),
-    "none": (4, "No action", TIER_RGB[RiskTier.SAFE]),
+    "before-2035": (2, "Before 2035", TIER_RGB[RiskTier.CRITICAL]),
+    "harden": (3, "Harden", TIER_RGB[RiskTier.MEDIUM]),
+    "review": (4, "Review", TIER_RGB[RiskTier.UNKNOWN]),
+    "none": (5, "No action", TIER_RGB[RiskTier.SAFE]),
 }
+# What the score's ends mean (core/scoring.py: a Shor-exposed signature weighs 0.7).
+SCORE_SCALE = (
+    "0 is quantum-ready. 10 is every asset broken today or breakable by Shor, on the internet "
+    "(signatures count 70%)."
+)
+# Flags that ask for a look even when the algorithm itself holds up (rules/algorithms.yaml).
+REVIEW_FLAGS = frozenset({"hand-rolled-crypto"})
 
 NOTHING_FOUND = (
     "None of the scanners recognised anything in these files. QuantumTrace reads AWS posture "
@@ -153,6 +169,8 @@ class Tally:
     internet_critical: int
     hndl: int
     internet_hndl: int
+    # medium findings Grover weakens; the rest are legacy protocols or broken today
+    m_grover: int = 0
 
 
 def tally(findings: list[Finding]) -> Tally:
@@ -163,6 +181,11 @@ def tally(findings: list[Finding]) -> Tally:
     return Tally(
         c=count(RiskTier.CRITICAL),
         m=count(RiskTier.MEDIUM),
+        m_grover=sum(
+            f.classification.tier is RiskTier.MEDIUM
+            and f.classification.threat is QuantumThreat.GROVER
+            for f in findings
+        ),
         u=count(RiskTier.UNKNOWN),
         s=count(RiskTier.SAFE),
         internet_critical=sum(f.classification.tier is RiskTier.CRITICAL for f in internet),
@@ -182,11 +205,17 @@ def headline(result: ScanResult) -> str:
 
 def hero_sub(t: Tally) -> str:
     """The sentence under the headline: why the critical ones matter, then the rest by tier."""
+    grover = (
+        ", weakened by Grover’s"
+        if t.m_grover == t.m
+        else f", {t.m_grover} of them weakened by Grover’s"
+        if t.m_grover
+        else ""
+    )
     rest = [
         part
         for part in (
-            f"{t.m} {'more ' if t.c else ''}{'is' if t.m == 1 else 'are'} medium, weakened by "
-            "Grover’s"
+            f"{t.m} {'more ' if t.c else ''}{'is' if t.m == 1 else 'are'} medium{grover}"
             if t.m
             else "",
             f"{t.u} {'is' if t.u == 1 else 'are'} unclassified" if t.u else "",
@@ -223,13 +252,22 @@ def hero_sub(t: Tally) -> str:
 
 
 def fix_by(f: Finding) -> FixBy:
-    """When to fix, from the engine's tier and classically-broken flag. Ordering only."""
+    """When to fix, from the engine's tier and classically-broken flag. Ordering only.
+
+    Shor-exposed keys follow NIST IR 8547: 112-bit strength (RSA-2048, DH-2048) is deprecated
+    after 2030, and every size is disallowed after 2035. An unknown size gets the earlier date.
+    """
     c = f.classification
     if c.tier is RiskTier.CRITICAL:
-        return "now" if c.classically_broken else "before-2030"
+        if c.classically_broken:
+            return "now"
+        bits = c.classical_security_bits
+        return "before-2035" if bits is not None and bits >= 128 else "before-2030"
     if c.tier is RiskTier.MEDIUM:
         return "harden"
-    return "review" if c.tier is RiskTier.UNKNOWN else "none"
+    if c.tier is RiskTier.UNKNOWN or REVIEW_FLAGS & set(f.asset.flags):
+        return "review"
+    return "none"
 
 
 @dataclass
@@ -283,11 +321,20 @@ def reason(f: Finding) -> str:
         broken = "Already broken today, and Shor’s algorithm breaks it."
         return (broken if c.classically_broken else "Shor’s algorithm breaks it.") + harvest
     if c.tier is RiskTier.MEDIUM:
+        grover = c.threat is QuantumThreat.GROVER
         if c.classically_broken:
-            return "Already broken today, and Grover’s algorithm weakens it further."
-        return "Grover’s algorithm halves its strength."
+            if grover:
+                return "Already broken today, and Grover’s algorithm weakens it further."
+            return "Already broken today, no quantum computer needed."
+        if grover:
+            return "Grover’s algorithm halves its strength."
+        if c.primitive is Primitive.PROTOCOL:
+            return "No post-quantum key exchange, so recorded sessions can be decrypted later."
+        return c.rationale
     if c.tier is RiskTier.UNKNOWN:
         return "No rule matches it yet, so check it by hand."
+    if REVIEW_FLAGS & set(f.asset.flags):
+        return "Home-made code: check it against the standard, or use the library’s own."
     return ""
 
 
@@ -467,7 +514,7 @@ class _Sheet:
         )
         self.y = base + 3
         self.para(
-            "0 is quantum-ready, 10 is every asset broken and exposed.",
+            SCORE_SCALE,
             size=7.5,
             color=FAINT,
             width=54,
@@ -655,7 +702,7 @@ class _Sheet:
             self.canvas.set_page(i)
             self.rule(PAGE_H - 15)
             self.write(
-                f"QuantumTrace · scan {scan} · classified against NIST FIPS 203, 204 and 205",
+                f"QuantumTrace · scan {scan} · mapped to NIST FIPS 203, 204 and 205",
                 MARGIN,
                 PAGE_H - 12.5,
                 7.5,
