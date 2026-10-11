@@ -48,6 +48,29 @@ export function headline(finding: Finding): string {
   return `${label(finding)}: ${finding.classification.rationale}`;
 }
 
+const HINT: Partial<Record<Threat, string>> = {
+  shor: "broken by Shor's algorithm",
+  grover: "weakened by Grover's algorithm",
+};
+const HINT_LENGTH = 72;
+
+/** A few words for the end of a marked line: what the worst finding on it is and why it
+ * matters, and how many more share the line. `findings` are most severe first. */
+export function inlineHint(findings: readonly Finding[]): string {
+  const [worst, ...others] = findings;
+  if (!worst) return "";
+  const c = worst.classification;
+  const why =
+    HINT[c.threat] ??
+    (c.classically_broken ? "already broken today" : TIER_LABEL[c.tier].toLowerCase());
+  const more = others.length ? ` (+${others.length} more)` : "";
+  const name = label(worst);
+  // the name can come from the scanned source, so it is the part that gives way
+  const room = HINT_LENGTH - why.length - more.length - 2;
+  const shown = name.length > room ? `${name.slice(0, Math.max(room - 1, 1))}…` : name;
+  return `${shown}: ${why}${more}`;
+}
+
 /** A `command:` link that stays intact inside a Markdown link, whatever the arguments contain. */
 export function commandLink(command: string, args: readonly unknown[]): string {
   const query = encodeURIComponent(JSON.stringify(args)).replace(

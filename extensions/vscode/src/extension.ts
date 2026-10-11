@@ -15,7 +15,7 @@ import {
   EngineError,
   type Scan,
 } from "./engine";
-import { commandLink, explanation, headline, label, type Tone } from "./explain";
+import { commandLink, explanation, headline, inlineHint, label, type Tone } from "./explain";
 import {
   applyEdits,
   mostSevereFirst,
@@ -77,6 +77,20 @@ export function activate(context: vscode.ExtensionContext): void {
     [vscode.DiagnosticSeverity.Warning, lineStyle("medium", "editorOverviewRuler.warningForeground")],
     [vscode.DiagnosticSeverity.Information, lineStyle("unknown", "editorOverviewRuler.infoForeground")],
   ];
+  const hintStyle = (tier: string) =>
+    vscode.window.createTextEditorDecorationType({
+      after: {
+        color: new vscode.ThemeColor(`quantumtrace.${tier}Foreground`),
+        margin: "0 0 0 3ch",
+        fontStyle: "italic",
+      },
+    });
+  /** The few words after the code of a marked line, in the line's risk colour. */
+  const hintStyles: [vscode.DiagnosticSeverity, vscode.TextEditorDecorationType][] = [
+    [vscode.DiagnosticSeverity.Error, hintStyle("critical")],
+    [vscode.DiagnosticSeverity.Warning, hintStyle("medium")],
+    [vscode.DiagnosticSeverity.Information, hintStyle("unknown")],
+  ];
 
   const setting = <T>(name: string, fallback: T): T =>
     vscode.workspace.getConfiguration("quantumtrace").get<T>(name, fallback);
@@ -123,20 +137,32 @@ export function activate(context: vscode.ExtensionContext): void {
     const underline = underlined();
     diagnostics.set(uri, underline ? items.map(toDiagnostic) : []);
 
-    // one colour per line: the most severe finding on it
-    const worst = new Map<number, number>();
-    if (!underline) {
-      for (const o of items) {
-        worst.set(o.line, Math.min(worst.get(o.line) ?? Infinity, severity(o.finding)));
-      }
-    }
+    // per line, most severe first: that finding gives the line its colour and its few words
+    const byLine = new Map<number, Occurrence[]>();
+    for (const o of mostSevereFirst(items)) byLine.set(o.line, [...(byLine.get(o.line) ?? []), o]);
+    const levelOf = (onLine: Occurrence[]) => Math.min(...onLine.map((o) => severity(o.finding)));
+    const hinted = setting("inlineHint", true);
+
     for (const editor of vscode.window.visibleTextEditors) {
-      if (editor.document.uri.toString() !== uri.toString()) continue;
+      const { document } = editor;
+      if (document.uri.toString() !== uri.toString()) continue;
+      const lines = [...byLine].filter(([line]) => line < document.lineCount);
       for (const [level, style] of lineStyles) {
-        const lines = [...worst].filter(([, s]) => s === level).map(([line]) => line);
+        const coloured = underline ? [] : lines.filter(([, onLine]) => levelOf(onLine) === level);
         editor.setDecorations(
           style,
-          lines.map((line) => new vscode.Range(line, 0, line, 0)),
+          coloured.map(([line]) => new vscode.Range(line, 0, line, 0)),
+        );
+      }
+      for (const [level, style] of hintStyles) {
+        const worded = hinted ? lines.filter(([, onLine]) => levelOf(onLine) === level) : [];
+        editor.setDecorations(
+          style,
+          worded.map(([line, onLine]) => {
+            const end = document.lineAt(line).range.end;
+            const contentText = inlineHint(onLine.map((o) => o.finding));
+            return { range: new vscode.Range(end, end), renderOptions: { after: { contentText } } };
+          }),
         );
       }
     }
@@ -478,6 +504,7 @@ export function activate(context: vscode.ExtensionContext): void {
     diagnostics,
     log,
     ...lineStyles.map(([, style]) => style),
+    ...hintStyles.map(([, style]) => style),
     // highlights belong to an editor, not a file: draw them whenever one comes into view
     vscode.window.onDidChangeVisibleTextEditors((editors) => {
       for (const editor of editors) render(editor.document.uri);
