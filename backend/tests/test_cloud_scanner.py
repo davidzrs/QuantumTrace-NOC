@@ -239,6 +239,7 @@ def test_kms_deprecated_spec_field_is_read(tmp_path: Path) -> None:
     key = {"KeyArn": KEY_ARN, "KeyUsage": "ENCRYPT_DECRYPT", "CustomerMasterKeySpec": "RSA_2048"}
     [finding] = scan_json(tmp_path, "kms.json", {"Keys": [key]}).findings
     assert (finding.classification.rule_id, finding.classification.hndl) == ("rsa", True)
+    assert finding.asset.evidence.context["json_path"] == "$.Keys[0].CustomerMasterKeySpec"
 
 
 def test_kms_list_keys_export_is_a_limitation_not_findings(tmp_path: Path) -> None:

@@ -124,7 +124,8 @@ class AwsCloudPostureScanner:
         unspecified = 0
         for i, key in enumerate(data["Keys"]):
             # CustomerMasterKeySpec is the deprecated name of KeySpec, same value
-            spec: str = key.get("KeySpec") or key.get("CustomerMasterKeySpec", "")
+            field_name = "KeySpec" if key.get("KeySpec") else "CustomerMasterKeySpec"
+            spec: str = key.get(field_name, "")
             if not spec:  # `aws kms list-keys` gives only ids: nothing to classify
                 unspecified += 1
                 continue
@@ -142,7 +143,7 @@ class AwsCloudPostureScanner:
                 "description": key.get("Description", ""),
                 "origin": key.get("Origin", ""),
                 "file": str(path),
-                "json_path": f"$.Keys[{i}].KeySpec",
+                "json_path": f"$.Keys[{i}].{field_name}",
             }
             if curve:
                 context["curve"] = curve
