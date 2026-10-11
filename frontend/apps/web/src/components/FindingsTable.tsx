@@ -13,6 +13,7 @@ import {
   EXPOSURE_LABEL,
   evidenceLabel,
   observationLabel,
+  runtimeNote,
   placeLabel,
   plural,
   SOURCE_LABEL,
@@ -660,6 +661,12 @@ function FindingDetail({
           <dt className="text-ink-muted">Observed</dt>
           <dd className="font-mono break-all text-ink-soft">{place.asset.observed}</dd>
         </div>
+        {runtimeNote(place.asset.evidence.execution) && (
+          <div className="flex min-w-0 gap-2">
+            <dt className="text-ink-muted">At runtime</dt>
+            <dd className="text-ink-soft">{runtimeNote(place.asset.evidence.execution)}</dd>
+          </div>
+        )}
         {c.oid && (
           <div className="flex gap-2">
             <dt className="text-ink-muted">OID</dt>

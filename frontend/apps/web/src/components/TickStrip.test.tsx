@@ -18,7 +18,7 @@ function finding(tier: RiskTier, source: Source): Finding {
       confidence: "high",
       exposure: "internet",
       flags: [],
-      evidence: { source_type: source, location: "x", line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
+      evidence: { source_type: source, location: "x", line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {}, execution: null },
       more_evidence: [],
       library: null,
     },

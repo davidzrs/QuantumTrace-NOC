@@ -50,12 +50,17 @@ ignore = ["S101"]  # asserts are fine in tests
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "E501"]
+# The tracer runs inside the user's own interpreter, whatever its version, and must never break
+# the program it watches: old syntax on purpose, and hooks that swallow their own errors.
+"src/quantumtrace/tracers/python/*" = ["UP", "S110", "SIM105", "B009"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 mypy_path = "src"
 plugins = ["pydantic.mypy"]
+# stand-alone and unannotated, so it also imports on interpreters older than this project's
+exclude = ["src/quantumtrace/tracers/python/"]
 
 [[tool.mypy.overrides]]
 module = ["scapy.*"]

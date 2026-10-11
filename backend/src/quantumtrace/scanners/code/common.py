@@ -125,7 +125,7 @@ class SourceFile:
         if self.ignored(pos):
             return
         line = self.line_of(pos)
-        variant = variant or _variant(algorithm, key_size, flags, context)
+        variant = variant or variant_name(algorithm, key_size, flags, context)
         key = (normalise(algorithm), key_size, usage, variant)
         evidence = self._evidence(pos, observed, context)
         if (existing := self._assets.get(key)) is not None:
@@ -318,7 +318,7 @@ CURVE_NAMES = {
 }  # fmt: skip
 
 
-def _variant(
+def variant_name(
     algorithm: str, key_size: int | None, flags: tuple[str, ...] | list[str],
     context: dict[str, str] | None,
 ) -> str | None:  # fmt: skip

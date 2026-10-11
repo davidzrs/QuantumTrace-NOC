@@ -34,6 +34,8 @@ uv run quantumtrace scan ../samples/cloud-posture                      # table
 uv run quantumtrace scan ../samples -f cbom -o quantumtrace.cdx.json   # CycloneDX 1.6
 uv run quantumtrace scan ./my-repo --fail-on critical                  # CI gate
 uv run quantumtrace probe github.com                                   # live TLS handshake
+uv run quantumtrace trace --root ./my-repo -- python -m pytest         # what the tests really run
+uv run quantumtrace scan ./my-repo                                     # ...then read the trace
 ```
 
 ## Status
@@ -42,6 +44,7 @@ uv run quantumtrace probe github.com                                   # live TL
 | --- | --- |
 | Cloud posture (AWS KMS, ACM, ELB TLS policies) | working: 69 findings on `samples/cloud-posture` |
 | Source code (Python, Java, Go) | working: 39 findings with file:line evidence, misuse flags (ECB, hard-coded keys, weak RNG, hand-rolled KDF) |
+| Cryptography in use (`quantumtrace trace -- <tests>`, VS Code "Run tests with the runtime tracer") | working for Python 3.12+: a tracer records which lines ran and each `hashlib` / `hmac` / `cryptography` call with its real parameters; the scan marks findings `executed` ("ran 14× in test_login") or not run, and finds what source alone cannot (an algorithm named by a variable, a key size from configuration, calls made inside a library). Java and Go: not yet |
 | Network capture (TLS on any port incl. STARTTLS, SSH, cleartext) | working: 473 findings over 135 sessions, hybrid ML-KEM detected |
 | Live TLS probing (`quantumtrace probe <host>`, `POST /api/v1/probes/tls`) | working: negotiated version, group (hybrid ML-KEM or classical), cipher, TLS 1.2 downgrade path, leaf certificate key |
 | Public GitHub repository by URL (`POST /api/v1/scans/github`, web app) | working: pinned to one commit, branch/tag/folder links, each code finding links to its line on GitHub |

@@ -11,6 +11,7 @@ const ev = (location: string, source_type: Evidence["source_type"] = "code"): Ev
   end_column: null,
   snippet: null,
   snippet_start_line: null,
+  execution: null,
   context: {},
 });
 

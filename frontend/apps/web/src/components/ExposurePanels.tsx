@@ -15,6 +15,7 @@ const UPLOAD_HINT: Record<Source, string> = {
 /** Proof strength, strongest first, as shades of ink. */
 const OBSERVATIONS: { id: Finding["asset"]["observation"]; shade: string }[] = [
   { id: "negotiated", shade: "#e8ebef" },
+  { id: "executed", shade: "#d9dee4" },
   { id: "in-code", shade: "#c9d0d8" },
   { id: "configured", shade: "#9aa5b1" },
   { id: "offered", shade: "#6b7685" },

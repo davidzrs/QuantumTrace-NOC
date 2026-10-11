@@ -1,9 +1,11 @@
-"""Command-line adapter: `quantumtrace scan <paths>` and `quantumtrace probe <host>`,
-`--format table|json|cbom`."""
+"""Command-line adapter: `quantumtrace scan <paths>`, `quantumtrace probe <host>` and
+`quantumtrace trace -- <command>`, with `--format table|json|cbom`."""
 
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -14,8 +16,9 @@ from rich.table import Table
 
 from quantumtrace.cbom.cyclonedx import to_cyclonedx
 from quantumtrace.core.engine import run_probe, run_scan
-from quantumtrace.core.models import RiskTier, ScanResult
+from quantumtrace.core.models import Evidence, RiskTier, ScanResult
 from quantumtrace.scanners.network.probe import ProbeError
+from quantumtrace.tracers import TRACE_FILE, python_environment
 
 app = typer.Typer(help="QuantumTrace: post-quantum readiness scanner", no_args_is_help=True)
 console = Console()
@@ -71,12 +74,48 @@ def probe(
     _report(result, fmt, output, fail_on)
 
 
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def trace(
+    ctx: typer.Context,
+    root: Annotated[
+        Path, typer.Option(exists=True, file_okay=False, help="The project folder")
+    ] = Path("."),
+) -> None:
+    """Run a command with the runtime tracer, to see which cryptography the code really
+    executes: `quantumtrace trace -- python -m pytest`. The next `scan` of the folder reads
+    the trace."""
+    if not ctx.args:
+        console.print(
+            "[red]error[/] Give the command to run: quantumtrace trace -- python -m pytest"
+        )
+        raise typer.Exit(code=2)
+    root = root.resolve()
+    out = root / TRACE_FILE
+    out.unlink(missing_ok=True)  # a trace is one run: an old one would describe other code
+    try:
+        # the user's own command, run as typed
+        done = subprocess.run(ctx.args, env=python_environment(root, out, os.environ), check=False)  # noqa: S603
+    except OSError as exc:
+        console.print(f"[red]error[/] Could not run {ctx.args[0]}: {exc}")
+        raise typer.Exit(code=2) from exc
+    if out.exists():
+        console.print(f"Trace written to {out}. Read it with: quantumtrace scan {root}")
+    else:
+        console.print(
+            "[yellow]No trace was written.[/] The tracer follows Python programs: check that "
+            "the command starts Python 3.12 or newer."
+        )
+    raise typer.Exit(code=done.returncode)
+
+
 def _report(
     result: ScanResult, fmt: OutputFormat, output: Path | None, fail_on: RiskTier | None
 ) -> None:
     if fmt is OutputFormat.TABLE:
         table = Table(title=f"QuantumTrace: {len(result.findings)} findings")
-        for col in ("Tier", "Algorithm", "Observed", "Usage", "Exposure", "Location"):
+        traced = any(e.execution for f in result.findings for e in f.asset.all_evidence)
+        columns = ["Tier", "Algorithm", "Observed", "Usage", "Exposure", "Location"]
+        for col in [*columns, *(["Ran"] if traced else [])]:
             table.add_column(col)
         order = list(RiskTier)
         for f in sorted(result.findings, key=lambda f: order.index(f.classification.tier)):
@@ -88,6 +127,7 @@ def _report(
                 f.asset.usage or "",
                 f.asset.exposure.value,
                 f.asset.evidence.location,
+                *([_ran(f.asset.all_evidence)] if traced else []),
             )
         console.print(table)
         s = result.score
@@ -111,6 +151,17 @@ def _report(
 
     if fail_on and any(f.classification.tier == fail_on for f in result.findings):
         raise typer.Exit(code=1)
+
+
+def _ran(places: list[Evidence]) -> str:
+    """What a runtime trace saw of a finding: `14 calls`, `yes`, `no`, or nothing to say."""
+    seen = [e.execution for e in places if e.execution is not None]
+    if not seen:
+        return ""
+    if not any(x.ran for x in seen):
+        return "[dim]no[/]"
+    calls = sum(x.calls or 0 for x in seen)
+    return f"{calls} call{'' if calls == 1 else 's'}" if calls else "yes"
 
 
 @app.command("openapi")
