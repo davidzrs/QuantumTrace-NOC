@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { ScanTable } from "../components/ScanTable";
 import { accountScanIds, signIn, signOut, useAccount } from "../lib/account";
 import { api } from "../lib/api";
+import { useDeleteScans } from "../lib/deleteScans";
 import { plural } from "../lib/format";
 import { MIN_PASSWORD, usernameProblem } from "../lib/username";
 
@@ -144,6 +145,7 @@ function SignedIn({ uid, username }: { uid: string; username: string }) {
       return found.sort((a, b) => b.created_at.localeCompare(a.created_at));
     },
   });
+  const deleteScans = useDeleteScans();
 
   async function leave() {
     setBusy(true);
@@ -166,9 +168,9 @@ function SignedIn({ uid, username }: { uid: string; username: string }) {
           <div className="grid gap-2">
             <h1 className={title}>Account</h1>
             <p className="max-w-[68ch] text-ink-muted">
-              Signed in as <strong className="text-ink">{username}</strong>. Scans you run while signed in, and the
-              ones already in this browser, are saved here, so they follow you to any computer you sign in from.
-              Signing out leaves this browser’s own scans listed.
+              Signed in as <strong className="text-ink">{username}</strong>. Scans you run while signed in are saved
+              here, so they follow you to any computer you sign in from. The scan page keeps listing what was run
+              in this browser.
             </p>
           </div>
           <button type="button" className="btn" onClick={() => void leave()} disabled={busy}>
@@ -203,7 +205,12 @@ function SignedIn({ uid, username }: { uid: string; username: string }) {
         ) : scans.data.length ? (
           <>
             <p className="text-[17px]">{historySentence(scans.data)}</p>
-            <ScanTable scans={scans.data} />
+            {deleteScans.error && (
+              <p role="alert" className="border-l-2 border-critical pl-4">
+                {deleteScans.error.message}. Check that the scanner is online and try again.
+              </p>
+            )}
+            <ScanTable scans={scans.data} onDelete={(id) => deleteScans.mutate([id])} deleting={deleteScans.isPending} />
           </>
         ) : (
           <div className="grid justify-items-start gap-4">

@@ -2,15 +2,16 @@ import type { ScanResult } from "@quantumtrace/sdk";
 import { TierGlyph } from "@quantumtrace/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { HeroGlow, useScramble } from "../components/HeroGlow";
 import { ChromeIcon, FirefoxIcon, VsCodeIcon } from "../components/BrandIcons";
 import { RepoScan } from "../components/RepoScan";
 import { ScanBench, type RunningScan } from "../components/ScanBench";
 import { ScanTable } from "../components/ScanTable";
 import { api } from "../lib/api";
-import { accountScanIds, accountState, removeScans, saveScans, useAccount } from "../lib/account";
-import { forget, mergeHistory, readHistory, remember, writeHistory } from "../lib/history";
+import { accountState, saveScans, useAccount } from "../lib/account";
+import { useDeleteScans } from "../lib/deleteScans";
+import { readHistory, remember, writeHistory } from "../lib/history";
 import type { Picked } from "../lib/intake";
 import { pack, UploadTooLarge } from "../lib/pack";
 import { TIER } from "../lib/tiers";
@@ -28,24 +29,17 @@ export function Home() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [running, setRunning] = useState<RunningScan | null>(null);
-  // Optional: signed in, the list also holds the account's scans from other computers. Any
-  // account failure falls back to this browser's history, so nothing here depends on it.
-  const account = useAccount();
-  const signedIn = account.status === "signed-in";
+  // Only this browser's scans, signed in or not. An account's scans are on the Account page.
+  const signedIn = useAccount().status === "signed-in";
   const scans = useQuery({
-    queryKey: ["scans", signedIn ? account.uid : "browser"],
+    queryKey: ["scans", "browser"],
     queryFn: async () => {
-      const local = readHistory();
-      const saved = signedIn ? await accountScanIds().catch(() => []) : [];
-      const ids = mergeHistory(local, saved);
+      const ids = readHistory();
       if (!ids.length) return [];
       const found = await api.listScans(ids);
       // Forget scans the API no longer has (they expire after 30 days).
       const alive = new Set(found.map((s) => s.id));
-      writeHistory(local.filter((id) => alive.has(id)));
-      if (signedIn) {
-        void removeScans(saved.filter((id) => ids.includes(id) && !alive.has(id))).catch(() => undefined);
-      }
+      writeHistory(ids.filter((id) => alive.has(id)));
       return found.sort((a, b) => b.created_at.localeCompare(a.created_at));
     },
   });
@@ -81,19 +75,7 @@ export function Home() {
   });
   const scanError = uploadScan.error;
 
-  const deleteScans = useMutation({
-    mutationFn: async (ids: string[]) => {
-      const results = await Promise.allSettled(ids.map((id) => api.deleteScan(id)));
-      const deleted = ids.filter((_, i) => results[i]?.status === "fulfilled");
-      forget(deleted);
-      if (accountState().status === "signed-in") await removeScans(deleted).catch(() => undefined);
-      for (const id of deleted) queryClient.removeQueries({ queryKey: ["scan", id] });
-      if (deleted.length < ids.length) {
-        throw new Error(`${ids.length - deleted.length} of ${ids.length} scans couldn’t be deleted`);
-      }
-    },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["scans"] }),
-  });
+  const deleteScans = useDeleteScans();
   const deleteAll = () => {
     const ids = scans.data?.map((s) => s.id) ?? [];
     const n = ids.length;
@@ -182,11 +164,14 @@ export function Home() {
             <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
               <span className="text-sm text-ink-faint">
                 {health.data?.persistent
-                  ? signedIn
-                    ? "Kept for 30 days, saved to your account"
-                    : "Kept for 30 days, listed only in this browser"
+                  ? "Kept for 30 days, listed only in this browser"
                   : "Held in memory until the API restarts"}
               </span>
+              {signedIn && (
+                <Link to="/account" className="link text-sm font-semibold text-ink-muted">
+                  Your account’s scans
+                </Link>
+              )}
               {!!scans.data?.length && (
                 <button
                   type="button"
