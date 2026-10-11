@@ -331,3 +331,29 @@ def test_weak_rng_repeats_keep_the_strongest_clue(tmp_path: Path) -> None:
     assert [e.line for e in rng.asset.all_evidence] == [2, 5]
     assert "secret_hint" not in rng.asset.evidence.context
     assert rng.asset.more_evidence[0].context["secret_hint"] == "session_id"
+
+
+@pytest.mark.parametrize("name", ["KEY_ALIAS", "keyId", "SIGNING_KEY_NAME", "CACHE_KEY_PREFIX"])
+def test_a_string_that_names_a_key_is_not_a_hardcoded_key(tmp_path: Path, name: str) -> None:
+    # 16 characters, like an AES-128 key, but it's the key's alias in a keystore
+    code = f"""
+class Vault {{
+    private static final String {name} = "card-data-key-01";
+    byte[] seal(java.security.Key key, byte[] pan) throws Exception {{
+        javax.crypto.Cipher c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+        c.init(javax.crypto.Cipher.ENCRYPT_MODE, key);
+        return c.doFinal(pan);
+    }}
+}}
+"""
+    [aes] = scan_source(tmp_path, "Vault.java", code).findings
+    assert "hardcoded-key" not in aes.asset.flags
+    assert not aes.classification.classically_broken
+    assert aes.asset.key_size is None  # the size isn't in the source
+
+
+def test_a_key_literal_is_still_a_hardcoded_key(tmp_path: Path) -> None:
+    code = 'EXPORT_KEY = b"0123456789abcdef"\n'
+    code += "from Crypto.Cipher import AES\nc = AES.new(EXPORT_KEY, AES.MODE_GCM)\n"
+    [aes] = scan_source(tmp_path, "export.py", code).findings
+    assert "hardcoded-key" in aes.asset.flags and aes.asset.key_size == 128
