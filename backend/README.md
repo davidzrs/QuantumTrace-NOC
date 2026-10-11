@@ -6,6 +6,7 @@ See the repo root README and `.claude/CLAUDE.md` for architecture and commands.
 ```sh
 uv sync
 uv run quantumtrace scan ../samples/cloud-posture --format table
+uv run quantumtrace report ../samples --out ../outputs   # offline: PDF summary, report.json and CBOM
 uv run uvicorn quantumtrace.api.app:app --reload
 uv run pytest
 uv run quantumtrace trace -- python -m pytest   # which crypto the code really runs; next scan reads it
