@@ -8,8 +8,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from quantumtrace.core import libraries
 from quantumtrace.core.classifier import Classifier, default_classifier
-from quantumtrace.core.models import CryptoAsset, Finding, ScanNote, ScanResult
+from quantumtrace.core.models import CryptoAsset, CryptoLibrary, Finding, ScanNote, ScanResult
 from quantumtrace.core.scoring import score, score_by_source
 from quantumtrace.scanners import Scanner, registry
 from quantumtrace.scanners.network import probe
@@ -40,6 +41,7 @@ def run_scan(
 
     findings: list[Finding] = []
     notes: list[ScanNote] = []
+    declared: list[CryptoLibrary] = []
     used: list[str] = []
     errors: list[str] = []
     for scanner in scanners:
@@ -51,12 +53,15 @@ def run_scan(
             for item in scanner.scan(accepted):
                 if isinstance(item, CryptoAsset):
                     findings.append(classifier.classify(item))
+                elif isinstance(item, CryptoLibrary):
+                    declared.append(item)
                 elif item not in notes:
                     notes.append(item)
         except Exception as exc:  # one broken input must not kill the whole scan
             errors.append(f"{scanner.name}: {exc}")
 
     return ScanResult(
+        libraries=libraries.merge(declared, findings),
         targets=list(display_targets) if display_targets else [str(t) for t in targets],
         scanners=used,
         findings=findings,

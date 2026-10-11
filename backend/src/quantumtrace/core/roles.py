@@ -64,6 +64,10 @@ USAGE_ROLES: dict[str, Role] = {
     "kdf-prf": Role.DIGEST,
     "key-generation": Role.OTHER,
     "rng": Role.OTHER,
+    # certificate and key files, server configs
+    "ssh-user-key": Role.AUTHENTICATION,  # authorized_keys, id_*.pub, PubkeyAcceptedAlgorithms
+    "private-key": Role.OTHER,  # a key file says what it is, not what it is used for
+    "public-key": Role.OTHER,
 }
 
 

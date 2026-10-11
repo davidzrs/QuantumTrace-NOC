@@ -26,6 +26,9 @@ class _Readable(Protocol):
     def read(self, size: int = -1, /) -> bytes: ...
 
 
+JAVA_ARCHIVES = {".jar", ".war", ".ear"}
+
+
 def _too_large(what: str, max_bytes: int, advice: str) -> HTTPException:
     limit = max_bytes // (1024 * 1024)
     return HTTPException(
@@ -96,7 +99,9 @@ async def materialise(
         else:
             budget.unpack(received.stat().st_size)
 
-        if zipfile.is_zipfile(target):
+        # A .jar is a zip too, but the binary scanner reads it whole: its entries' paths
+        # (`app.jar!/…`) and bundled libraries (`META-INF/maven`) only make sense inside it.
+        if target.suffix.lower() not in JAVA_ARCHIVES and zipfile.is_zipfile(target):
             _extract(target, target.with_suffix(""), budget)
             target.unlink()
 

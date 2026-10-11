@@ -1,7 +1,8 @@
-"""Export a ScanResult as a CycloneDX 1.6 CBOM (cryptographic-asset components).
+"""Export a ScanResult as a CycloneDX 1.6 CBOM (cryptographic-asset and library components).
 
 One component per distinct algorithm (rule + key size); every place it was seen becomes an
-evidence occurrence, so the CBOM stays compact but fully traceable.
+evidence occurrence, so the CBOM stays compact but fully traceable. Each cryptographic library
+is a `library` component, and the dependency graph says which algorithms it `provides`.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from uuid import UUID
 
 from quantumtrace import __version__
 from quantumtrace.core.classifier import load_misuse
-from quantumtrace.core.models import Finding, Primitive, QuantumThreat, ScanResult
+from quantumtrace.core.models import CryptoLibrary, Finding, Primitive, QuantumThreat, ScanResult
 
 SPEC_VERSION = "1.6"
 _PROTOCOL_TYPES = {"tls": "tls", "ssh": "ssh", "ipsec": "ipsec", "ike": "ike"}
@@ -46,8 +47,47 @@ def to_cyclonedx(result: ScanResult) -> dict[str, Any]:
                 ),
             ],
         },
-        "components": [_component(ref, fs) for ref, fs in sorted(groups.items())],
+        "components": [
+            *(_component(ref, fs) for ref, fs in sorted(groups.items())),
+            *(_library(lib) for lib in result.libraries),
+        ],
+        "dependencies": [
+            {"ref": _library_ref(lib), "provides": provides}
+            for lib in result.libraries
+            if (
+                provides := sorted(
+                    {_bom_ref(f) for f in result.findings if f.asset.library == lib.id}
+                )
+            )
+        ],
     }
+
+
+def _library_ref(lib: CryptoLibrary) -> str:
+    return re.sub(r"[^A-Za-z0-9/.@:\-]+", "-", f"library/{lib.id}")
+
+
+def _library(lib: CryptoLibrary) -> dict[str, Any]:
+    """A library component: its version and purl when declared, the manifest lines as evidence."""
+    component: dict[str, Any] = {"type": "library", "bom-ref": _library_ref(lib), "name": lib.name}
+    if lib.version:
+        component["version"] = lib.version
+    if lib.purl:
+        component["purl"] = lib.purl
+    if lib.evidence:
+        component["evidence"] = {"occurrences": [
+            {"location": e.location, **({"line": e.line} if e.line else {}),
+             **({"additionalContext": e.context["declared"]} if "declared" in e.context else {})}
+            for e in lib.evidence
+        ]}  # fmt: skip
+    properties = [
+        {"name": "quantumtrace:ecosystem", "value": lib.ecosystem},
+        {"name": "quantumtrace:declared", "value": str(bool(lib.evidence)).lower()},
+    ]
+    if lib.note:
+        properties.append({"name": "quantumtrace:note", "value": lib.note})
+    component["properties"] = properties
+    return component
 
 
 def _bom_ref(f: Finding) -> str:

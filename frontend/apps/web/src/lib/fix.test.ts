@@ -22,6 +22,7 @@ const f = (
     flags: [],
     evidence: { source_type: "cloud", location, line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
     more_evidence: [],
+    library: null,
   },
   classification: {
     rule_id: rule,

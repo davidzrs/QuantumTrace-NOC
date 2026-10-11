@@ -29,6 +29,7 @@ const f = (tier: RiskTier, where: Evidence, ...more: Evidence[]): Finding => ({
     flags: [],
     evidence: where,
     more_evidence: more,
+    library: null,
   },
   classification: {
     rule_id: "x",

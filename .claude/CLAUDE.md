@@ -33,16 +33,18 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | --- | --- |
 | `backend/src/quantumtrace/core/` | models, classifier, scoring, engine, `roles.py` (usage → role, decides `hndl`) |
 | `backend/src/quantumtrace/rules/` | `algorithms.yaml`, `aws_elb_policies.yaml`, `tls.py` (cipher-suite decomposition) |
-| `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe) |
+| `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`; `imports.py` ties each call to its library), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe), `deps/` (requirements, pyproject, go.mod, pom.xml, package.json), `keys/` (certificate and key files; `material.py` shared with the probe), `config/` (sshd_config, nginx, Apache), `binary/` (Java bytecode and jars, Go executables) |
+| `backend/src/quantumtrace/core/libraries.py` | crypto library catalogue; ties findings to the declared library, which the CBOM lists as `library` components that `provide` algorithms |
 | `backend/src/quantumtrace/cbom/` | CycloneDX 1.6 export |
 | `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`; scans in memory or Upstash Redis (`store/`); `github.py` fetches public repos for `/scans/github` (refs from git's `info/refs`, zip from codeload, no GitHub API rate limit) |
-| `backend/tests/` | golden tests against `samples/` for every vector |
+| `backend/tests/` | golden tests against `samples/` and `personal-samples/` for every vector |
 | `frontend/apps/web/` | React 19 + Vite + Tailwind v4 dashboard (deployed to Vercel) |
 | `frontend/packages/sdk/` | generated OpenAPI types + typed client |
 | `frontend/packages/ui/` | `TierBadge`, `DebtStrip`, design tokens, shared with extension popups |
 | `extensions/browser/` | WXT popup (Chrome MV3 + Firefox) over `POST /api/v1/probes/tls` |
 | `extensions/vscode/` | VS Code extension (`quantumtrace-vscode`): highlights code findings, explains and dismisses them, via the CLI or the API |
 | `samples/` | organiser data (READMEs in Portuguese). Read-only: never edit to make a test pass |
+| `personal-samples/` | our samples for the file types `samples/` lacks (manifests, certificates, server configs, binaries); golden tests assert on them. Sources and rebuild steps in `backend/tests/sample_sources/` |
 
 ## Commands
 

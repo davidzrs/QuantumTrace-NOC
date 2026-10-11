@@ -108,6 +108,28 @@ def test_zip_skips_dependency_folders(samples: Path) -> None:
     assert files == {"repo/app.py"}  # not repo/repo/app.py
 
 
+def test_java_archives_are_scanned_whole_not_unpacked(
+    samples: Path, personal_samples: Path
+) -> None:
+    import gzip
+
+    jar = (personal_samples / "binaries" / "legacy-vault.jar").read_bytes()
+    client = make_client(samples)
+    for name, body in (
+        ("lib/legacy-vault.jar", jar),
+        ("lib/legacy-vault.jar.gz", gzip.compress(jar)),
+    ):
+        res = client.post("/api/v1/scans", files=[("files", (name, body))])
+        assert res.status_code == 200, res.text
+        scan = res.json()
+        locations = {f["asset"]["evidence"]["location"] for f in scan["findings"]}
+        assert locations == {"lib/legacy-vault.jar!/com/acme/vault/LegacyVault.class"}
+        bundled = [e["location"] for lib in scan["libraries"] for e in lib["evidence"]]
+        assert bundled == [
+            "lib/legacy-vault.jar!/META-INF/maven/org.bouncycastle/bcprov-jdk18on/pom.properties"
+        ]
+
+
 def test_folder_and_zip_in_one_scan(samples: Path) -> None:
     import gzip
 
