@@ -598,6 +598,7 @@ def test_a_program_that_fails_keeps_its_own_error_and_its_trace(tmp_path: Path) 
             {"bits": 384, "curve": "secp384r1"},
             ("ECDH", "key-agreement", 384),
         ),
+        ("cryptography.ed25519.generate", {}, ("Ed25519", "key-generation", None)),
         ("cryptography.ed25519.sign", {}, ("Ed25519", "signature", None)),
         ("cryptography.x25519.exchange", {}, ("ECDH", "key-agreement", None)),
         ("cryptography.dsa.sign", {"bits": 1024}, ("DSA", "signature", 1024)),

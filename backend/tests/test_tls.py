@@ -19,6 +19,7 @@ from quantumtrace.rules.tls import decompose
         ("TLS_CHACHA20_POLY1305_SHA256", None, None, "ChaCha20-Poly1305", None, ()),
         ("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "ECDHE", "ECDSA", "AES-128-GCM", None, ()),
         ("TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "ECDHE", "RSA", "ChaCha20-Poly1305", None, ()),
+        ("TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "DHE", "RSA", "ChaCha20-Poly1305", None, ()),
         ("TLS_RSA_WITH_3DES_EDE_CBC_SHA", "RSA", "RSA", "3DES-CBC", "HMAC-SHA1",
          ("no-forward-secrecy", "cbc-mode")),
         ("TLS_RSA_WITH_AES_256_CBC_SHA", "RSA", "RSA", "AES-256-CBC", "HMAC-SHA1",

@@ -79,6 +79,39 @@ def test_python_ed25519_is_shor_vulnerable(result: ScanResult) -> None:
     assert ("critical", "EdDSA") in tiers(in_file(result, "python/webhook_signature.py"))
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["python/webhook_signature.py", "java/DeviceAttestation.java", "go/agent-enrollment/main.go"],
+)
+def test_ed25519_generate_and_sign_are_reported_alike_in_every_language(
+    result: ScanResult, name: str
+) -> None:
+    eddsa = [f for f in in_file(result, name) if f.classification.name == "EdDSA"]
+    assert sorted(f.asset.usage or "" for f in eddsa) == ["key-generation", "signature"]
+
+
+def test_python_ed25519_sign_is_a_method_call_on_the_key(result: ScanResult) -> None:
+    by_usage = {f.asset.usage: f for f in in_file(result, "python/webhook_signature.py")}
+    assert by_usage["key-generation"].asset.evidence.line == 5  # Ed25519PrivateKey.generate()
+    assert by_usage["signature"].asset.evidence.line == 10  # private_key.sign(payload)
+    assert by_usage["signature"].asset.confidence is Confidence.MEDIUM  # key type inferred
+
+
+def test_python_sign_with_padding_is_not_read_as_ed25519(tmp_path: Path) -> None:
+    code = """from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ed25519, padding
+
+def sign_both(rsa_key, data):
+    edkey = ed25519.Ed25519PrivateKey.generate()
+    return rsa_key.sign(data, padding.PSS(padding.MGF1(hashes.SHA256()), 32), hashes.SHA256())
+"""
+    names = {
+        (f.classification.name, f.asset.usage) for f in scan_source(tmp_path, "s.py", code).findings
+    }
+    assert ("EdDSA", "signature") not in names
+    assert ("EdDSA", "key-generation") in names
+
+
 # --- Java --------------------------------------------------------------------------------
 def test_java_sha1_with_rsa(samples: Path) -> None:
     result = run_scan([samples / REPOS / "java/ReceiptSigner.java"])
@@ -129,6 +162,43 @@ def test_go_hand_rolled_pbkdf2_detected(result: ScanResult) -> None:
     assert kdf.classification.name == "PBKDF2"
     assert "hand-rolled-crypto" in kdf.asset.flags
     assert "deriveKey" in kdf.asset.observed
+    # the HMAC calls inside it are its PRF: named in the finding, not reported again
+    assert kdf.asset.variant == "PBKDF2-HMAC-SHA256 (hand-rolled)"
+    assert not [f for f in in_file(result, "go/auth-gateway/main.go") if f.asset.usage == "mac"]
+
+
+def test_hand_rolled_pbkdf2_with_sha1_reports_its_hmac_sha1_prf(tmp_path: Path) -> None:
+    code = """package auth
+
+import (
+	"crypto/hmac"
+	"crypto/sha1"
+)
+
+func derive(password, salt []byte, iter int) []byte {
+	var out []byte
+	for block := 1; block <= 1; block++ {
+		u := hmac.New(sha1.New, password).Sum(salt)
+		t := append([]byte{}, u...)
+		for i := 1; i < iter; i++ {
+			u = hmac.New(sha1.New, password).Sum(u)
+			for j := range t {
+				t[j] ^= u[j]
+			}
+		}
+		out = append(out, t...)
+	}
+	return out
+}
+"""
+    findings = scan_source(tmp_path, "derive.go", code).findings
+    summary = {(f.classification.name, f.asset.usage) for f in findings}
+    # the PRF is HMAC-SHA1: SHA-1 collisions don't break it (RFC 6151), so not broken
+    assert summary == {("PBKDF2", "kdf"), ("HMAC-SHA1", "kdf-prf")}
+    [kdf] = [f for f in findings if f.asset.usage == "kdf"]
+    assert kdf.asset.variant == "PBKDF2-HMAC-SHA1 (hand-rolled)"
+    [prf] = [f for f in findings if f.asset.usage == "kdf-prf"]
+    assert not prf.classification.classically_broken
 
 
 def test_go_hmac_hash_not_double_counted(result: ScanResult) -> None:
@@ -331,3 +401,101 @@ def test_weak_rng_repeats_keep_the_strongest_clue(tmp_path: Path) -> None:
     assert [e.line for e in rng.asset.all_evidence] == [2, 5]
     assert "secret_hint" not in rng.asset.evidence.context
     assert rng.asset.more_evidence[0].context["secret_hint"] == "session_id"
+
+
+@pytest.mark.parametrize("name", ["KEY_ALIAS", "keyId", "SIGNING_KEY_NAME", "CACHE_KEY_PREFIX"])
+def test_a_string_that_names_a_key_is_not_a_hardcoded_key(tmp_path: Path, name: str) -> None:
+    # 16 characters, like an AES-128 key, but it's the key's alias in a keystore
+    code = f"""
+class Vault {{
+    private static final String {name} = "card-data-key-01";
+    byte[] seal(java.security.Key key, byte[] pan) throws Exception {{
+        javax.crypto.Cipher c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+        c.init(javax.crypto.Cipher.ENCRYPT_MODE, key);
+        return c.doFinal(pan);
+    }}
+}}
+"""
+    [aes] = scan_source(tmp_path, "Vault.java", code).findings
+    assert "hardcoded-key" not in aes.asset.flags
+    assert not aes.classification.classically_broken
+    assert aes.asset.key_size is None  # the size isn't in the source
+
+
+@pytest.mark.parametrize("name", ["EXPORT_KEY", "FILE_ENCRYPTION_KEY", "HEADER_SIGNING_KEY"])
+def test_a_key_literal_is_still_a_hardcoded_key(tmp_path: Path, name: str) -> None:
+    # a word before "key" says what the key is for; only words after it point at a key
+    code = f'{name} = b"0123456789abcdef"\n'
+    code += "from cryptography.hazmat.primitives.ciphers.aead import AESGCM\n"
+    code += f"def seal(payload, nonce):\n    return AESGCM({name}).encrypt(nonce, payload, None)\n"
+    [aes] = scan_source(tmp_path, "export.py", code).findings
+    assert "hardcoded-key" in aes.asset.flags and aes.asset.key_size == 128
+    assert aes.classification.classically_broken
+
+
+def test_a_mac_after_a_hand_rolled_pbkdf2_is_still_its_own_finding(tmp_path: Path) -> None:
+    # only the HMACs in the iteration loops are the PBKDF2's PRF
+    code = """package auth
+
+import (
+\t"crypto/hmac"
+\t"crypto/sha1"
+\t"crypto/sha256"
+)
+
+func deriveWithProof(password, salt, challenge []byte, iter int) ([]byte, []byte) {
+\tvar derived []byte
+\tfor block := 1; block <= 1; block++ {
+\t\tu := hmac.New(sha256.New, password).Sum(salt)
+\t\tt := append([]byte{}, u...)
+\t\tfor i := 1; i < iter; i++ {
+\t\t\tu = hmac.New(sha256.New, password).Sum(u)
+\t\t\tfor j := range t {
+\t\t\t\tt[j] ^= u[j]
+\t\t\t}
+\t\t}
+\t\tderived = append(derived, t...)
+\t}
+\tproof := hmac.New(sha1.New, derived)
+\tproof.Write(challenge)
+\treturn derived, proof.Sum(nil)
+}
+"""
+    summary = {
+        (f.classification.name, f.asset.usage) for f in scan_source(tmp_path, "p.go", code).findings
+    }
+    assert summary == {("PBKDF2", "kdf"), ("HMAC-SHA1", "mac")}
+
+
+def test_java_pbkdf2_with_sha1_reports_an_hmac_sha1_prf(tmp_path: Path) -> None:
+    code = """class Legacy {
+    byte[] derive(char[] pw, byte[] salt) throws Exception {
+        var f = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
+        return f.generateSecret(new javax.crypto.spec.PBEKeySpec(pw, salt, 1000, 128)).getEncoded();
+    }
+}
+"""
+    [prf] = [
+        f for f in scan_source(tmp_path, "Legacy.java", code).findings if f.asset.usage == "kdf-prf"
+    ]
+    assert prf.classification.name == "HMAC-SHA1"
+    assert not prf.classification.classically_broken
+
+
+def test_python_ed448_and_ed25519_signatures_keep_their_own_algorithm(tmp_path: Path) -> None:
+    code = """from cryptography.hazmat.primitives.asymmetric import ed25519, ed448
+
+primary_key = ed25519.Ed25519PrivateKey.generate()
+partner_key = ed448.Ed448PrivateKey.generate()
+
+def sign_primary(payload):
+    return primary_key.sign(payload)
+
+def sign_partner(payload):
+    return partner_key.sign(payload,)
+"""
+    findings = scan_source(tmp_path, "signatures.py", code).findings
+    signed = {
+        f.asset.evidence.line: f.asset.variant for f in findings if f.asset.usage == "signature"
+    }
+    assert signed == {7: "Ed25519", 10: "Ed448"}  # line 10 also has a trailing comma

@@ -35,6 +35,12 @@ SECRET_WORDS = frozenset({
     "token", "key", "secret", "password", "passwd", "pwd", "nonce", "salt", "otp", "session",
     "iv", "seed", "csrf", "auth",
 })  # fmt: skip
+# A string assigned to KEY_ALIAS, keyId or CACHE_KEY_PREFIX names or locates a key. It isn't
+# the key, so it says nothing about a hard-coded key or its size.
+KEY_REFERENCE_WORDS = frozenset({
+    "alias", "id", "name", "path", "file", "url", "uri", "arn", "prefix", "label", "header",
+    "type", "ref",
+})  # fmt: skip
 _IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
 # snake_case and camelCase words: session_token -> session, token; getIVBytes -> get, IV, Bytes
 _NAME_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
@@ -49,6 +55,18 @@ def is_secret_name(identifier: str) -> bool:
     `private` don't."""
     words = (w.lower() for w in _NAME_WORD.findall(identifier))
     return any(w in SECRET_WORDS or w.removesuffix("s") in SECRET_WORDS for w in words)
+
+
+def names_key_reference(identifier: str) -> bool:
+    """Whether the identifier holds something that points at a key rather than the key: a
+    reference word after the key word (`KEY_ALIAS`, `keyIds`, `CACHE_KEY_PREFIX`). Before it,
+    the word says what the key is for (`FILE_ENCRYPTION_KEY` is a key)."""
+    words = [w.lower() for w in _NAME_WORD.findall(identifier)]
+    last_key = max((i for i, w in enumerate(words) if "key" in w), default=len(words))
+    return any(
+        w in KEY_REFERENCE_WORDS or w.removesuffix("s") in KEY_REFERENCE_WORDS
+        for w in words[last_key + 1 :]
+    )
 
 
 def _go_function(header: str) -> str | None:
@@ -285,7 +303,7 @@ class SourceFile:
         """
         for m in _KEY_LITERAL.finditer(self.text):
             n = len(m.group(3).encode())
-            if n in (16, 24, 32):
+            if n in (16, 24, 32) and not names_key_reference(m.group(1)):
                 return n * 8, True
         for m in _KEY_CONST.finditer(self.text):
             value = int(m.group(2).replace("_", ""))

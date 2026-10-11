@@ -212,7 +212,12 @@ def tls_assets(
     client_msgs = tls.handshake_messages(cs)
     server_msgs = tls.handshake_messages(ss)
     ch_body = next((b for t, b in client_msgs if t == tls.CLIENT_HELLO), None)
-    sh_body = next((b for t, b in server_msgs if t == tls.SERVER_HELLO), None)
+    # A HelloRetryRequest (a ServerHello with a fixed random) only asks the client to retry;
+    # the negotiated parameters are in the ServerHello after it. An HRR alone proves nothing
+    # was negotiated (RFC 8446 4.1.4).
+    hellos = [b for t, b in server_msgs if t == tls.SERVER_HELLO]
+    sh_body = next((b for b in hellos if b[2:34] != tls.HRR_RANDOM), None)
+    hrr_body = next((b for b in hellos if b[2:34] == tls.HRR_RANDOM), None)
     ch = tls.parse_hello(ch_body, server=False) if ch_body else None
     sh = tls.parse_hello(sh_body, server=True) if sh_body else None
     if ch is None:
@@ -251,6 +256,13 @@ def tls_assets(
 
     if sh is None:  # no server response captured: report what the client offered
         ctx["note"] = "ServerHello not captured; showing client offer"
+        hrr = tls.parse_hello(hrr_body, server=True) if hrr_body else None
+        if hrr is not None:
+            asked = tls.server_key_share_group(hrr)
+            name = NAMED_GROUPS[asked].name if asked in NAMED_GROUPS else None
+            ctx["note"] = "Only a HelloRetryRequest was captured; the handshake didn't finish"
+            if asked is not None:
+                ctx["hrr_selected_group"] = name or f"0x{asked:04x}"
         yield asset("ClientHello", "unknown-tls-session", "tls-protocol",
                     observation=Observation.OFFERED)  # fmt: skip
         return

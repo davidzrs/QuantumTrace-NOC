@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 HANDSHAKE = 0x16
 CLIENT_HELLO, SERVER_HELLO, CERTIFICATE, SERVER_KEY_EXCHANGE = 1, 2, 11, 12
 EXT_SERVER_NAME, EXT_GROUPS, EXT_SUPPORTED_VERSIONS, EXT_KEY_SHARE = 0, 10, 43, 51
+# RFC 8446 4.1.3: a ServerHello with this random is a HelloRetryRequest
+HRR_RANDOM = bytes.fromhex("cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c")
 
 
 @dataclass

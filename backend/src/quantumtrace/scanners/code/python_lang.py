@@ -81,8 +81,19 @@ def scan(src: SourceFile) -> None:
         )
     for m in re.finditer(r"\bec\.ECDH\s*\(", text):
         src.emit(m.start(), "ec.ECDH", "ECDH", "key-agreement")
+    edwards: list[str] = []
     for m in re.finditer(r"\b(ed25519|ed448)\.(Ed25519|Ed448)Private", text):
-        src.emit(m.start(), m.group(0), m.group(2), "signature")
+        edwards.append(m.group(2))
+        src.emit(m.start(), m.group(0), m.group(2), "key-generation")
+    if edwards:
+        # pyca signs with a method on the key object (`private_key.sign(data)`), so the call
+        # names no algorithm. In a file holding an Ed25519/Ed448 key, a one-argument .sign() is
+        # that key signing; RSA and ECDSA keys take a padding or algorithm argument too.
+        for m in re.finditer(r"\b([A-Za-z_][\w.]*)\.sign\(", text):
+            if _one_argument(text, m.end() - 1):
+                key_alg, conf = _edwards_key(text, m.group(1), edwards)
+                src.emit(m.start(), m.group(0).rstrip("("), key_alg, "signature",
+                         confidence=conf)  # fmt: skip
     for m in re.finditer(r"\b(x25519|x448)\.(X25519|X448)Private", text):
         src.emit(m.start(), m.group(0), "ECDH", "key-agreement", context={"curve": m.group(2)})
     for m in re.finditer(r"\bdsa\.generate_private_key\(([^)]*)\)", text):
@@ -135,3 +146,35 @@ def _cipher(
     ctx = {"mode": mode} if mode else None
     src.emit(pos, observed, alg, "encryption", key_size=size, flags=flags, confidence=conf,
              context=ctx)  # fmt: skip
+
+
+def _one_argument(text: str, open_paren: int) -> bool:
+    """Whether the call whose `(` is at `open_paren` passes exactly one argument
+    (`sign(data)` or `sign(data,)`)."""
+    depth, current = 0, open_paren + 1
+    args: list[str] = []
+    for i in range(open_paren, len(text)):
+        c = text[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                args.append(text[current:i])
+                args = [a for a in args if a.strip()]  # a trailing comma adds an empty one
+                return len(args) == 1
+        elif c == "," and depth == 1:
+            args.append(text[current:i])
+            current = i + 1
+    return False
+
+
+def _edwards_key(text: str, receiver: str, families: list[str]) -> tuple[str, Confidence]:
+    """Which Edwards key a `receiver.sign()` call uses: the one assigned to that name, else the
+    only kind in the file, else unknown between Ed25519 and Ed448."""
+    name = re.escape(receiver.split(".")[-1])
+    if m := re.search(rf"\b{name}\s*=\s*[\w.]*?(Ed25519|Ed448)PrivateKey", text):
+        return m.group(1), Confidence.MEDIUM
+    if len(set(families)) == 1:
+        return families[0], Confidence.MEDIUM
+    return "EdDSA", Confidence.LOW
