@@ -28,9 +28,13 @@ def scan(src: SourceFile) -> None:
     imports = set(re.findall(r"\"((?:crypto|golang\.org/x/crypto|math)/[\w/]+)\"", text))
     aes_bits, hardcoded = src.symmetric_key_hint()
 
-    hmac_spans: list[tuple[int, int]] = []
-    for m in re.finditer(r"\bhmac\.New\(\s*(\w+)\.(\w+)", text):
-        hmac_spans.append(m.span())
+    hmacs = list(re.finditer(r"\bhmac\.New\(\s*(\w+)\.(\w+)", text))
+    hmac_spans = [m.span() for m in hmacs]
+    # HMAC calls inside a hand-rolled PBKDF2 are its PRF: part of that finding, not their own
+    kdf_bodies = _hand_rolled_kdf(src, hmacs)
+    for m in hmacs:
+        if any(a <= m.start() < b for a, b in kdf_bodies):
+            continue
         if name := HMAC_HASH.get((m.group(1), m.group(2))):
             src.emit(m.start(), m.group(0) + ", ...)", name, "mac")
     for m in re.finditer(r"\b(md5|sha1|sha256|sha512|sha3)\.(\w+)\(", text):
@@ -87,25 +91,34 @@ def scan(src: SourceFile) -> None:
                 "bcrypt": "bcrypt"}[m.group(1).split(".")[0]]  # fmt: skip
         src.emit(m.start(), m.group(1), name, "kdf")
 
-    _hand_rolled_kdf(src, hmac_spans)
-
     if "math/rand" in imports or "math/rand/v2" in imports:
         for m in re.finditer(r"\brand\.(Read|Int\w*|Uint\w*)\(", text):
             src.emit_weak_rng(m.start(), f"math/rand.{m.group(1)}")
 
 
-def _hand_rolled_kdf(src: SourceFile, hmac_spans: list[tuple[int, int]]) -> None:
-    """HMAC re-applied inside a loop with XOR accumulation is a home-made PBKDF2."""
+def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> list[tuple[int, int]]:
+    """HMAC re-applied inside a loop with XOR accumulation is a home-made PBKDF2. The HMAC is
+    its PRF and is named in the finding, like a library PBKDF2's; a SHA-1 or MD5 PRF is also
+    reported on its own, as Java's PBKDF2WithHmacSHA1 is. Returns the reported bodies' spans."""
     text = src.text
-    if not hmac_spans or "^=" not in text or "pbkdf2.Key" in text:
-        return
+    bodies: list[tuple[int, int]] = []
+    if not hmacs or "^=" not in text or "pbkdf2.Key" in text:
+        return bodies
     for func in re.finditer(r"^func\s+(\w+)\s*\(", text, re.M):
         end = text.find("\n}", func.end())
         body = text[func.end() : end if end != -1 else len(text)]
         offset = func.end()
-        in_body = [s for s, _ in hmac_spans if offset <= s < offset + len(body)]
+        in_body = [m for m in hmacs if offset <= m.start() < offset + len(body)]
         if in_body and "^=" in body and re.search(r"\bfor\b[^{]*\{[^}]*\bfor\b", body, re.S):
+            prf = in_body[0]
+            digest = HASH_CALLS.get((prf.group(1), prf.group(2)))  # SHA-256, SHA-1, ...
+            label = digest.replace("-", "") if digest else None
             src.emit(func.start(), f"func {func.group(1)} (manual HMAC iteration)", "PBKDF2",
-                     "kdf", flags=["hand-rolled-crypto"], variant="PBKDF2-HMAC-SHA256 (hand-rolled)"
-                     if "sha256.New" in body else None,
+                     "kdf", flags=["hand-rolled-crypto"],
+                     variant=f"PBKDF2-HMAC-{label} (hand-rolled)" if label else None,
+                     context={"prf": label} if label else None,
                      confidence=Confidence.MEDIUM)  # fmt: skip
+            if digest in ("SHA-1", "MD5"):
+                src.emit(prf.start(), prf.group(0) + ", ...)", digest, "kdf-prf")
+            bodies.append((offset, offset + len(body)))
+    return bodies

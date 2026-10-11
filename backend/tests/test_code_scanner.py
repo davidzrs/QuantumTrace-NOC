@@ -162,6 +162,40 @@ def test_go_hand_rolled_pbkdf2_detected(result: ScanResult) -> None:
     assert kdf.classification.name == "PBKDF2"
     assert "hand-rolled-crypto" in kdf.asset.flags
     assert "deriveKey" in kdf.asset.observed
+    # the HMAC calls inside it are its PRF: named in the finding, not reported again
+    assert kdf.asset.variant == "PBKDF2-HMAC-SHA256 (hand-rolled)"
+    assert not [f for f in in_file(result, "go/auth-gateway/main.go") if f.asset.usage == "mac"]
+
+
+def test_hand_rolled_pbkdf2_with_sha1_still_reports_the_weak_prf(tmp_path: Path) -> None:
+    code = """package auth
+
+import (
+	"crypto/hmac"
+	"crypto/sha1"
+)
+
+func derive(password, salt []byte, iter int) []byte {
+	var out []byte
+	for block := 1; block <= 1; block++ {
+		u := hmac.New(sha1.New, password).Sum(salt)
+		t := append([]byte{}, u...)
+		for i := 1; i < iter; i++ {
+			u = hmac.New(sha1.New, password).Sum(u)
+			for j := range t {
+				t[j] ^= u[j]
+			}
+		}
+		out = append(out, t...)
+	}
+	return out
+}
+"""
+    findings = scan_source(tmp_path, "derive.go", code).findings
+    summary = {(f.classification.name, f.asset.usage) for f in findings}
+    assert summary == {("PBKDF2", "kdf"), ("SHA-1", "kdf-prf")}
+    [kdf] = [f for f in findings if f.asset.usage == "kdf"]
+    assert kdf.asset.variant == "PBKDF2-HMAC-SHA1 (hand-rolled)"
 
 
 def test_go_hmac_hash_not_double_counted(result: ScanResult) -> None:
