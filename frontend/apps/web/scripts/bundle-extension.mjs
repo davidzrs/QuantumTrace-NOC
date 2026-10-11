@@ -3,7 +3,7 @@
 // this web app, and to this web app for full reports, so it works straight after "Load
 // unpacked". The VS Code extension offers that same API on machines with no local scanner.
 import { execSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,8 +27,10 @@ for (const browser of ["chrome", "firefox"]) {
 
 mkdirSync(outDir, { recursive: true });
 const zips = readdirSync(join(extension, ".output"));
+// .output keeps the zips of earlier versions: take the one just built
+const { version } = JSON.parse(readFileSync(join(extension, "package.json"), "utf8"));
 for (const browser of ["chrome", "firefox"]) {
-  const zip = zips.find((f) => f.endsWith(`-${browser}.zip`));
+  const zip = zips.find((f) => f.endsWith(`-${version}-${browser}.zip`));
   if (!zip) throw new Error(`wxt zip produced no ${browser} zip in ${extension}/.output`);
   copyFileSync(join(extension, ".output", zip), join(outDir, `quantumtrace-${browser}.zip`));
 }
