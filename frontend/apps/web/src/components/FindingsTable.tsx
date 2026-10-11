@@ -33,6 +33,7 @@ const SESSIONS_SHOWN = 40;
 const FIX_TAG: Record<FixBy, React.CSSProperties> = {
   now: { background: "var(--qt-critical)", color: "var(--qt-ground)" },
   "before-2030": { border: "1px solid var(--qt-critical)", color: "var(--qt-critical)" },
+  "before-2035": { border: "1px solid var(--qt-critical)", color: "var(--qt-critical)" },
   harden: { border: "1px solid var(--qt-medium)", color: "var(--qt-medium)" },
   review: { border: "1px solid var(--qt-rule-strong)", color: "var(--qt-ink-muted)" },
   none: { border: "1px solid var(--qt-rule-strong)", color: "var(--qt-ink-faint)" },
@@ -145,7 +146,8 @@ export function FindingsTable({
           </h2>
           <p className="text-ink-muted">
             Broken today first. Then what Shor’s algorithm will break once quantum computers are big
-            enough: NIST deprecates it in 2030 and disallows it in 2035. Then Grover hardening.
+            enough: NIST deprecates 112-bit keys such as RSA-2048 after 2030 and disallows every size
+            after 2035. Then Grover hardening and legacy protocols.
           </p>
         </div>
         <span className="text-sm text-ink-muted tabular-nums" aria-live="polite">
@@ -746,7 +748,7 @@ function Fact({ label, value, sub, color }: { label: string; value: string; sub:
 
 const EXPOSURE_NOTE: Record<string, string> = {
   internet: "Traffic can be recorded today and decrypted later.",
-  internal: "Inside the network, still readable from any compromised host.",
+  internal: "Inside the network: an attacker needs a foothold there to record or reach it.",
   unknown: "This input has no network context.",
 };
 
@@ -765,6 +767,8 @@ function threatLabel(f: Finding): string {
   if (c.classically_broken) return "Broken today";
   if (c.threat === "shor") return "Shor’s algorithm";
   if (c.threat === "grover") return "Grover’s algorithm";
+  // TLS 1.2, or TLS 1.3 without a hybrid group: the risk is the classical key exchange it carries
+  if (c.threat === "none" && c.tier === "medium" && c.primitive === "protocol") return "No post-quantum key exchange";
   if (c.threat === "none") return "None known";
   return "Not classified";
 }

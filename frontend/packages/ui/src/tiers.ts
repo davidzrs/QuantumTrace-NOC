@@ -11,7 +11,7 @@ export const TIER_META: Record<RiskTier, { label: string; threat: string; color:
   },
   medium: {
     label: "Weakened",
-    threat: "Security halved by Grover's algorithm",
+    threat: "Weakened by Grover's algorithm, or legacy",
     color: "var(--qt-medium)",
     wash: "var(--qt-medium-wash)",
   },

@@ -4,10 +4,16 @@ import type { Finding, RiskTier } from "@quantumtrace/sdk";
 export const NOTHING_FOUND =
   "None of the scanners recognised anything in these files. QuantumTrace reads AWS posture exports (JSON), Python, Java and Go source, SSH and TLS server configs, certificates and keys, Java and Go builds, and .pcap or .pcapng captures.";
 
+/** What the score's ends mean (core/scoring.py: a Shor-exposed signature weighs 0.7). */
+export const SCORE_SCALE =
+  "0 is quantum-ready. 10 is every asset broken today or breakable by Shor, on the internet (signatures count 70%).";
+
 /** What the report's opening sentences are made of, counted over the findings in view. */
 export interface Tally {
   c: number;
   m: number;
+  /** Medium findings Grover weakens; the rest are legacy protocols or broken today. */
+  mGrover: number;
   u: number;
   s: number;
   internetCritical: number;
@@ -20,6 +26,7 @@ export function tally(findings: Finding[]): Tally {
   return {
     c: count("critical"),
     m: count("medium"),
+    mGrover: findings.filter((f) => f.classification.tier === "medium" && f.classification.threat === "grover").length,
     u: count("unknown"),
     s: count("safe"),
     internetCritical: findings.filter((f) => f.classification.tier === "critical" && f.asset.exposure === "internet").length,
@@ -29,9 +36,10 @@ export function tally(findings: Finding[]): Tally {
 }
 
 /** The sentence under the headline: why the critical ones matter, then the rest by tier. */
-export function heroSub({ c, m, u, s, internetCritical, hndl, internetHndl }: Tally): string {
+export function heroSub({ c, m, mGrover, u, s, internetCritical, hndl, internetHndl }: Tally): string {
+  const grover = mGrover === m ? ", weakened by Grover’s" : mGrover ? `, ${mGrover} of them weakened by Grover’s` : "";
   const rest = [
-    m ? `${m} ${c ? "more " : ""}${m === 1 ? "is" : "are"} medium, weakened by Grover’s` : "",
+    m ? `${m} ${c ? "more " : ""}${m === 1 ? "is" : "are"} medium${grover}` : "",
     u ? `${u} ${u === 1 ? "is" : "are"} unclassified` : "",
     s ? `${s} ${s === 1 ? "is" : "are"} safe` : "",
   ].filter(Boolean);

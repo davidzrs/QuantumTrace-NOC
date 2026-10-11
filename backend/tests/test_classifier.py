@@ -45,6 +45,25 @@ def test_lookup(algorithm: str, key_size: int | None, rule_id: str, tier: RiskTi
     assert (rule.id, rule.tier) == (rule_id, tier)
 
 
+@pytest.mark.parametrize(
+    ("algorithm", "key_size", "oid", "level"),
+    [
+        ("ML-KEM-512", None, "2.16.840.1.101.3.4.4.1", 1),
+        ("ML-KEM", 768, "2.16.840.1.101.3.4.4.2", 3),
+        ("MLKEM1024", None, "2.16.840.1.101.3.4.4.3", 5),
+        ("ML_DSA_44", None, "2.16.840.1.101.3.4.3.17", 2),
+        ("ML-DSA-65", None, "2.16.840.1.101.3.4.3.18", 3),
+        ("ML-DSA-87", None, "2.16.840.1.101.3.4.3.19", 5),
+    ],
+)
+def test_pqc_parameter_sets_keep_their_own_oid_and_category(
+    algorithm: str, key_size: int | None, oid: str, level: int
+) -> None:
+    rule = default_classifier().lookup(algorithm, key_size)
+    assert rule is not None, algorithm
+    assert (rule.oid, rule.nist_quantum_level) == (oid, level)
+
+
 def test_shor_rules_are_critical_and_grover_never_critical() -> None:
     for rule in load_rules():
         if rule.threat is QuantumThreat.SHOR:

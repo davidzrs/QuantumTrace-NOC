@@ -8,7 +8,7 @@ import { TickStrip } from "../components/TickStrip";
 import { api } from "../lib/api";
 import { downloadJson, formatWhen, noteSource, plural, SOURCE_LABEL, SOURCES, type Source } from "../lib/format";
 import { exportPdf } from "../lib/pdf";
-import { heroSub, NOTHING_FOUND, tally } from "../lib/summary";
+import { heroSub, NOTHING_FOUND, SCORE_SCALE, tally } from "../lib/summary";
 
 export function Report() {
   const { scanId = "" } = useParams();
@@ -266,7 +266,7 @@ function ScorePanel({ score, scope }: { score: RiskScore; scope: string }) {
           </div>
         </div>
       </div>
-      <p className="text-xs text-ink-faint">0 is quantum-ready, 10 is every asset broken and exposed.</p>
+      <p className="text-xs text-ink-faint">{SCORE_SCALE}</p>
     </div>
   );
 }
