@@ -30,10 +30,10 @@ def scan(src: SourceFile) -> None:
 
     hmacs = list(re.finditer(r"\bhmac\.New\(\s*(\w+)\.(\w+)", text))
     hmac_spans = [m.span() for m in hmacs]
-    # HMAC calls inside a hand-rolled PBKDF2 are its PRF: part of that finding, not their own
-    kdf_bodies = _hand_rolled_kdf(src, hmacs)
+    # HMAC calls inside a hand-rolled PBKDF2's loops are its PRF: part of that finding
+    prf_calls = _hand_rolled_kdf(src, hmacs)
     for m in hmacs:
-        if any(a <= m.start() < b for a, b in kdf_bodies):
+        if m.start() in prf_calls:
             continue
         if name := HMAC_HASH.get((m.group(1), m.group(2))):
             src.emit(m.start(), m.group(0) + ", ...)", name, "mac")
@@ -96,21 +96,22 @@ def scan(src: SourceFile) -> None:
             src.emit_weak_rng(m.start(), f"math/rand.{m.group(1)}")
 
 
-def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> list[tuple[int, int]]:
-    """HMAC re-applied inside a loop with XOR accumulation is a home-made PBKDF2. The HMAC is
-    its PRF and is named in the finding, like a library PBKDF2's; a SHA-1 or MD5 PRF is also
-    reported on its own, as Java's PBKDF2WithHmacSHA1 is. Returns the reported bodies' spans."""
+def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> set[int]:
+    """HMAC re-applied inside a loop with XOR accumulation is a home-made PBKDF2. The HMACs in
+    its loops are its PRF, named in the finding like a library PBKDF2's (a SHA-1 or MD5 one is
+    also reported on its own, as Java's PBKDF2WithHmacSHA1 is). An HMAC outside the loops, such
+    as a MAC over a message, stays a finding of its own. Returns the PRF calls' offsets."""
     text = src.text
-    bodies: list[tuple[int, int]] = []
+    prf_calls: set[int] = set()
     if not hmacs or "^=" not in text or "pbkdf2.Key" in text:
-        return bodies
+        return prf_calls
     for func in re.finditer(r"^func\s+(\w+)\s*\(", text, re.M):
         end = text.find("\n}", func.end())
         body = text[func.end() : end if end != -1 else len(text)]
-        offset = func.end()
-        in_body = [m for m in hmacs if offset <= m.start() < offset + len(body)]
-        if in_body and "^=" in body and re.search(r"\bfor\b[^{]*\{[^}]*\bfor\b", body, re.S):
-            prf = in_body[0]
+        loops = _loop_spans(body, func.end())
+        in_loops = [m for m in hmacs if any(a <= m.start() < b for a, b in loops)]
+        if in_loops and "^=" in body and re.search(r"\bfor\b[^{]*\{[^}]*\bfor\b", body, re.S):
+            prf = in_loops[0]
             digest = HASH_CALLS.get((prf.group(1), prf.group(2)))  # SHA-256, SHA-1, ...
             label = digest.replace("-", "") if digest else None
             src.emit(func.start(), f"func {func.group(1)} (manual HMAC iteration)", "PBKDF2",
@@ -118,7 +119,19 @@ def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> list[tuple[
                      variant=f"PBKDF2-HMAC-{label} (hand-rolled)" if label else None,
                      context={"prf": label} if label else None,
                      confidence=Confidence.MEDIUM)  # fmt: skip
-            if digest in ("SHA-1", "MD5"):
-                src.emit(prf.start(), prf.group(0) + ", ...)", digest, "kdf-prf")
-            bodies.append((offset, offset + len(body)))
-    return bodies
+            if digest in ("SHA-1", "MD5") and (mac := HMAC_HASH.get((prf.group(1), prf.group(2)))):
+                src.emit(prf.start(), prf.group(0) + ", ...)", mac, "kdf-prf")
+            prf_calls.update(m.start() for m in in_loops)
+    return prf_calls
+
+
+def _loop_spans(body: str, offset: int) -> list[tuple[int, int]]:
+    """Offsets of every `for ... { ... }` block in a function body, nested ones included."""
+    spans = []
+    for m in re.finditer(r"\bfor\b[^{]*\{", body):
+        depth, i = 1, m.end()
+        while i < len(body) and depth:
+            depth += {"{": 1, "}": -1}.get(body[i], 0)
+            i += 1
+        spans.append((offset + m.start(), offset + i))
+    return spans

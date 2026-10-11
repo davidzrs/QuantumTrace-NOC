@@ -167,7 +167,7 @@ def test_go_hand_rolled_pbkdf2_detected(result: ScanResult) -> None:
     assert not [f for f in in_file(result, "go/auth-gateway/main.go") if f.asset.usage == "mac"]
 
 
-def test_hand_rolled_pbkdf2_with_sha1_still_reports_the_weak_prf(tmp_path: Path) -> None:
+def test_hand_rolled_pbkdf2_with_sha1_reports_its_hmac_sha1_prf(tmp_path: Path) -> None:
     code = """package auth
 
 import (
@@ -193,9 +193,12 @@ func derive(password, salt []byte, iter int) []byte {
 """
     findings = scan_source(tmp_path, "derive.go", code).findings
     summary = {(f.classification.name, f.asset.usage) for f in findings}
-    assert summary == {("PBKDF2", "kdf"), ("SHA-1", "kdf-prf")}
+    # the PRF is HMAC-SHA1: SHA-1 collisions don't break it (RFC 6151), so not broken
+    assert summary == {("PBKDF2", "kdf"), ("HMAC-SHA1", "kdf-prf")}
     [kdf] = [f for f in findings if f.asset.usage == "kdf"]
     assert kdf.asset.variant == "PBKDF2-HMAC-SHA1 (hand-rolled)"
+    [prf] = [f for f in findings if f.asset.usage == "kdf-prf"]
+    assert not prf.classification.classically_broken
 
 
 def test_go_hmac_hash_not_double_counted(result: ScanResult) -> None:
@@ -428,6 +431,55 @@ def test_a_key_literal_is_still_a_hardcoded_key(tmp_path: Path, name: str) -> No
     [aes] = scan_source(tmp_path, "export.py", code).findings
     assert "hardcoded-key" in aes.asset.flags and aes.asset.key_size == 128
     assert aes.classification.classically_broken
+
+
+def test_a_mac_after_a_hand_rolled_pbkdf2_is_still_its_own_finding(tmp_path: Path) -> None:
+    # only the HMACs in the iteration loops are the PBKDF2's PRF
+    code = """package auth
+
+import (
+\t"crypto/hmac"
+\t"crypto/sha1"
+\t"crypto/sha256"
+)
+
+func deriveWithProof(password, salt, challenge []byte, iter int) ([]byte, []byte) {
+\tvar derived []byte
+\tfor block := 1; block <= 1; block++ {
+\t\tu := hmac.New(sha256.New, password).Sum(salt)
+\t\tt := append([]byte{}, u...)
+\t\tfor i := 1; i < iter; i++ {
+\t\t\tu = hmac.New(sha256.New, password).Sum(u)
+\t\t\tfor j := range t {
+\t\t\t\tt[j] ^= u[j]
+\t\t\t}
+\t\t}
+\t\tderived = append(derived, t...)
+\t}
+\tproof := hmac.New(sha1.New, derived)
+\tproof.Write(challenge)
+\treturn derived, proof.Sum(nil)
+}
+"""
+    summary = {
+        (f.classification.name, f.asset.usage) for f in scan_source(tmp_path, "p.go", code).findings
+    }
+    assert summary == {("PBKDF2", "kdf"), ("HMAC-SHA1", "mac")}
+
+
+def test_java_pbkdf2_with_sha1_reports_an_hmac_sha1_prf(tmp_path: Path) -> None:
+    code = """class Legacy {
+    byte[] derive(char[] pw, byte[] salt) throws Exception {
+        var f = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
+        return f.generateSecret(new javax.crypto.spec.PBEKeySpec(pw, salt, 1000, 128)).getEncoded();
+    }
+}
+"""
+    [prf] = [
+        f for f in scan_source(tmp_path, "Legacy.java", code).findings if f.asset.usage == "kdf-prf"
+    ]
+    assert prf.classification.name == "HMAC-SHA1"
+    assert not prf.classification.classically_broken
 
 
 def test_python_ed448_and_ed25519_signatures_keep_their_own_algorithm(tmp_path: Path) -> None:

@@ -78,8 +78,9 @@ def scan(src: SourceFile) -> None:
         if prf := re.match(r"(?i)PBKDF2WithHmac(\w+)", kdf):
             src.emit(m.start(), kdf, "PBKDF2", "kdf", context={"prf": prf.group(1)},
                      variant=f"PBKDF2-HMAC-{prf.group(1).upper()}")  # fmt: skip
-            if prf.group(1).upper() in ("SHA1", "MD5"):
-                src.emit(m.start(), kdf, prf.group(1), "kdf-prf")
+            # the PRF is the HMAC, which a SHA-1 or MD5 collision doesn't break (RFC 6151)
+            if weak := {"SHA1": "HMAC-SHA1", "MD5": "HmacMD5"}.get(prf.group(1).upper()):
+                src.emit(m.start(), kdf, weak, "kdf-prf")
         elif kdf:
             src.emit(m.start(), kdf, kdf.split("/")[0], "kdf")
 
