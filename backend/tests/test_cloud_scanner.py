@@ -258,3 +258,31 @@ def test_listener_certificates_export_is_not_read_as_acm(tmp_path: Path) -> None
     result = scan_json(tmp_path, "listener-certs.json", {"Certificates": certs})
     assert result.findings == []
     assert any("no KeyAlgorithm" in n.message for n in result.limitations)
+
+
+def test_kms_describe_key_response_is_read(tmp_path: Path) -> None:
+    # `aws kms describe-key` wraps one key in KeyMetadata and calls its ARN `Arn`
+    meta = {"Arn": KEY_ARN, "KeyUsage": "ENCRYPT_DECRYPT", "KeySpec": "RSA_2048",
+            "EncryptionAlgorithms": ["RSAES_OAEP_SHA_256"]}  # fmt: skip
+    [finding] = scan_json(tmp_path, "describe-key.json", {"KeyMetadata": meta}).findings
+    assert (finding.classification.rule_id, finding.classification.hndl) == ("rsa", True)
+    assert finding.asset.evidence.location == KEY_ARN
+    assert finding.asset.evidence.context["json_path"] == "$.KeyMetadata.KeySpec"
+
+
+def test_acm_describe_certificate_response_is_read(tmp_path: Path) -> None:
+    cert_arn = "arn:aws:acm:eu-west-1:123456789012:certificate/a1b2c3d4-1111-4aaa-8bbb-000000000001"
+    cert = {"CertificateArn": cert_arn, "KeyAlgorithm": "RSA_1024", "Type": "IMPORTED",
+            "SignatureAlgorithm": "SHA256WITHRSA", "InUseBy": [LISTENER_ARN]}  # fmt: skip
+    listener = {"ListenerArn": LISTENER_ARN, "Protocol": "HTTPS", "Port": 443,
+                "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-2021-06",
+                "Certificates": [{"CertificateArn": cert_arn}]}  # fmt: skip
+    lb = {"LoadBalancerName": "web", "Scheme": "internet-facing", "Listeners": [listener]}
+    (tmp_path / "describe-certificate.json").write_text(json.dumps({"Certificate": cert}))
+    (tmp_path / "listeners.json").write_text(json.dumps({"LoadBalancers": [lb]}))
+    result = run_scan([tmp_path])
+    [key] = [f for f in result.findings if f.asset.usage == "certificate-key"]
+    assert key.classification.rule_id == "rsa-1024"
+    assert key.asset.evidence.context["json_path"] == "$.Certificate.KeyAlgorithm"
+    assert key.asset.exposure is Exposure.INTERNET  # joined to the listener that uses it
+    assert not any("referenced only by ARN" in n.message for n in result.limitations)

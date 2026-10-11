@@ -30,6 +30,10 @@ from quantumtrace.core.models import (
 from quantumtrace.rules.tls import CLASSICAL_TLS13_GROUPS, decompose
 
 KIND_KEYS = {"Keys": "kms", "Certificates": "acm", "LoadBalancers": "elb"}
+# Single-object responses of `aws kms describe-key` and `aws acm describe-certificate`:
+# top-level key -> (kind, the list key the scanner reads)
+SINGLE_KEYS = {"KeyMetadata": ("kms", "Keys"), "Certificate": ("acm", "Certificates")}
+_ITEM_PATH = "__item_path__"  # set on unwrapped single responses: the item's real JSON path
 PLAINTEXT_PROTOCOLS = {"HTTP", "TCP", "UDP", "TCP_UDP"}
 # Certificate key type -> the TLS 1.2 suite authentication it can perform
 SUITE_AUTH = {"RSA": "RSA", "EC": "ECDSA"}
@@ -54,7 +58,18 @@ def _kind(path: Path) -> tuple[str, dict[str, Any]] | None:
     for key, kind in KIND_KEYS.items():
         if isinstance(data.get(key), list):
             return kind, data
+    for key, (kind, list_key) in SINGLE_KEYS.items():
+        if isinstance(item := data.get(key), dict):
+            if "Arn" in item:  # DescribeKey names the key ARN `Arn`, ListKeys `KeyArn`
+                item = {"KeyArn": item["Arn"], **item}
+            return kind, {list_key: [item], _ITEM_PATH: f"$.{key}"}
     return None
+
+
+def _item_path(data: dict[str, Any], list_key: str, index: int) -> str:
+    """JSON path of one key or certificate in the file as written: `$.Keys[2]`, or
+    `$.KeyMetadata` for a single-object response."""
+    return str(data.get(_ITEM_PATH, f"$.{list_key}[{index}]"))
 
 
 @dataclass
@@ -143,7 +158,7 @@ class AwsCloudPostureScanner:
                 "description": key.get("Description", ""),
                 "origin": key.get("Origin", ""),
                 "file": str(path),
-                "json_path": f"$.Keys[{i}].{field_name}",
+                "json_path": f"{_item_path(data, 'Keys', i)}.{field_name}",
             }
             if curve:
                 context["curve"] = curve
@@ -161,7 +176,10 @@ class AwsCloudPostureScanner:
             )
             for j, alg in enumerate(key.get("SigningAlgorithms", [])):
                 if hash_alg := _hash_from(alg):
-                    ctx = {**context, "json_path": f"$.Keys[{i}].SigningAlgorithms[{j}]"}
+                    ctx = {
+                        **context,
+                        "json_path": f"{_item_path(data, 'Keys', i)}.SigningAlgorithms[{j}]",
+                    }
                     yield CryptoAsset(
                         observed=alg,
                         algorithm=hash_alg,
@@ -211,7 +229,10 @@ class AwsCloudPostureScanner:
             )
 
             def at(field_name: str, ev: Evidence = evidence, idx: int = i) -> Evidence:
-                ctx = {**ev.context, "json_path": f"$.Certificates[{idx}].{field_name}"}
+                ctx = {
+                    **ev.context,
+                    "json_path": f"{_item_path(data, 'Certificates', idx)}.{field_name}",
+                }
                 return ev.model_copy(update={"context": ctx})
 
             algorithm, key_size, curve = _kms_key_spec(key_alg, "SIGN_VERIFY")
