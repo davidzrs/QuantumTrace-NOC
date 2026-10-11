@@ -212,7 +212,11 @@ def tls_assets(
     client_msgs = tls.handshake_messages(cs)
     server_msgs = tls.handshake_messages(ss)
     ch_body = next((b for t, b in client_msgs if t == tls.CLIENT_HELLO), None)
-    sh_body = next((b for t, b in server_msgs if t == tls.SERVER_HELLO), None)
+    # A HelloRetryRequest (a ServerHello with a fixed random) only asks the client to retry;
+    # the negotiated parameters are in the ServerHello after it. Keep the HRR if that's all
+    # the capture has.
+    hellos = [b for t, b in server_msgs if t == tls.SERVER_HELLO]
+    sh_body = next((b for b in hellos if b[2:34] != tls.HRR_RANDOM), hellos[0] if hellos else None)
     ch = tls.parse_hello(ch_body, server=False) if ch_body else None
     sh = tls.parse_hello(sh_body, server=True) if sh_body else None
     if ch is None:

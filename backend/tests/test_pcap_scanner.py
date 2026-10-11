@@ -210,3 +210,61 @@ def test_repeat_sessions_to_one_server_are_grouped() -> None:
     assert [len(g.all_evidence) for g in grouped] == [2, 1, 1]
     assert grouped[0].evidence.context["sessions"] == "2"
     assert grouped[0].more_evidence[0].context["packet"] == "20"
+
+
+# ---------------------------------------------------------------- handshakes beyond the sample
+def _vec(data: bytes, size: int = 2) -> bytes:
+    return len(data).to_bytes(size, "big") + data
+
+
+def _ext(kind: int, data: bytes) -> bytes:
+    return kind.to_bytes(2, "big") + _vec(data)
+
+
+def _hello(kind: int, random: bytes, suites: list[int], exts: bytes) -> bytes:
+    suite_bytes = b"".join(s.to_bytes(2, "big") for s in suites)
+    if kind == 1:  # ClientHello: suite list + compression list
+        suite_bytes, compression = _vec(suite_bytes), _vec(b"\x00", 1)
+    else:  # ServerHello: the chosen suite + compression method
+        compression = b"\x00"
+    body = b"\x03\x03" + random + b"\x00" + suite_bytes + compression + _vec(exts)
+    return bytes([kind]) + _vec(body, 3)
+
+
+def _record(*messages: bytes) -> bytes:
+    return b"\x16\x03\x03" + _vec(b"".join(messages))
+
+
+def _scan_session(tmp_path: Path, client: bytes, server: bytes) -> ScanResult:
+    from scapy.layers.inet import IP, TCP
+    from scapy.utils import wrpcap
+
+    c, s = "192.168.1.2", "203.0.113.10"
+    wrpcap(str(tmp_path / "session.pcap"), [
+        IP(src=c, dst=s) / TCP(sport=50000, dport=443, flags="S", seq=0),
+        IP(src=c, dst=s) / TCP(sport=50000, dport=443, flags="PA", seq=1) / client,
+        IP(src=s, dst=c) / TCP(sport=443, dport=50000, flags="PA", seq=1) / server,
+    ])  # fmt: skip
+    return run_scan([tmp_path / "session.pcap"])
+
+
+X25519MLKEM768 = 0x11EC
+TLS13 = _ext(0x002B, _vec(b"\x03\x04\x03\x03", 1))
+
+
+def test_hello_retry_request_is_skipped_for_the_real_server_hello(tmp_path: Path) -> None:
+    # A stateless server answers the first ClientHello with a cookie-only HelloRetryRequest
+    # (no key_share), then negotiates X25519MLKEM768 in the real ServerHello.
+    from quantumtrace.scanners.network.tls import HRR_RANDOM
+
+    share = X25519MLKEM768.to_bytes(2, "big") + _vec(bytes(1216))
+    groups = _ext(0x000A, _vec(X25519MLKEM768.to_bytes(2, "big") + b"\x00\x1d"))
+    hello = _hello(1, bytes(32), [0x1301], groups + TLS13 + _ext(0x0033, _vec(share)))
+    hrr_exts = _ext(0x002B, b"\x03\x04") + _ext(0x002C, _vec(b"cookie"))
+    hrr = _hello(2, HRR_RANDOM, [0x1301], hrr_exts)
+    sh_share = _ext(0x0033, X25519MLKEM768.to_bytes(2, "big") + _vec(bytes(1120)))
+    sh = _hello(2, bytes(32), [0x1301], _ext(0x002B, b"\x03\x04") + sh_share)
+    result = _scan_session(tmp_path, _record(hello), _record(hrr) + _record(sh))
+    rules = {f.asset.usage: f.classification.rule_id for f in result.findings}
+    assert rules["tls-protocol"] == "tls1.3"
+    assert rules["tls-key-exchange"] == "x25519mlkem768"
