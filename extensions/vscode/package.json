@@ -2,9 +2,10 @@
   "name": "quantumtrace-vscode",
   "displayName": "QuantumTrace",
   "description": "Highlights quantum-vulnerable cryptography in Python, Java and Go, explains the risk, says what to migrate to, and shows which of it your tests really run.",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "publisher": "quantumtrace",
+  "icon": "media/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/davidzrs/QuantumTrace-NOC.git",
