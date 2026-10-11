@@ -268,3 +268,15 @@ def test_hello_retry_request_is_skipped_for_the_real_server_hello(tmp_path: Path
     rules = {f.asset.usage: f.classification.rule_id for f in result.findings}
     assert rules["tls-protocol"] == "tls1.3"
     assert rules["tls-key-exchange"] == "x25519mlkem768"
+
+
+def test_dhe_chacha20_suite_reports_its_key_exchange(tmp_path: Path) -> None:
+    hello = _hello(1, bytes(32), [0xCCAA, 0x002F], b"")
+    sh = _hello(2, bytes(32), [0xCCAA], b"")
+    ske = bytes([12]) + _vec(_vec(bytes(256)) + _vec(b"\x02") + _vec(bytes(256)), 3)
+    result = _scan_session(tmp_path, _record(hello), _record(sh, ske))
+    [kex] = by_usage(result, "tls-key-exchange")
+    assert (kex.classification.rule_id, kex.asset.key_size) == ("dh", 2048)
+    assert kex.classification.hndl
+    [cipher] = by_usage(result, "tls-cipher")
+    assert cipher.asset.variant == "ChaCha20-Poly1305"
