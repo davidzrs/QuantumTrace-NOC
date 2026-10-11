@@ -69,4 +69,15 @@ describe("TickStrip", () => {
     fireEvent.click(tier);
     expect(onSelect).toHaveBeenLastCalledWith("critical", undefined);
   });
+
+  it("filters by a tier from its name in the legend too", () => {
+    const findings = [finding("critical", "code"), finding("medium", "cloud"), finding("safe", "network")];
+    const onSelect = vi.fn();
+    render(<TickStrip findings={findings} focus="medium" focusSource={undefined} onSelect={onSelect} />);
+    const medium = screen.getByRole("button", { name: "Show only medium findings" });
+    expect(medium.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show only safe findings" }));
+    expect(onSelect).toHaveBeenLastCalledWith("safe", undefined);
+  });
 });

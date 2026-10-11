@@ -1,8 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, Outlet, ScrollRestoration, useMatch } from "react-router";
 import { useAccount } from "../lib/account";
-import { api } from "../lib/api";
 import { readHistory } from "../lib/history";
+import { ApiStatus } from "./ApiStatus";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-2 text-sm font-medium no-underline ${
@@ -10,7 +9,6 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export function Shell() {
-  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0 });
   // Optional sign-in: a link only, hidden when this deployment has no Firebase config.
   const account = useAccount();
   const onReport = useMatch("/scans/:scanId");
@@ -39,25 +37,7 @@ export function Shell() {
               </span>
             )}
           </nav>
-          <p className="flex items-center gap-2 text-sm text-ink-muted" aria-live="polite">
-            <span
-              aria-hidden
-              className={`size-2 rounded-full ${
-                health.isSuccess
-                  ? "bg-safe shadow-[0_0_0_4px_rgba(67,209,177,0.15)]"
-                  : health.isError
-                    ? "bg-critical shadow-[0_0_0_4px_rgba(255,93,82,0.15)]"
-                    : "bg-rule-strong"
-              }`}
-            />
-            <span className="max-sm:sr-only">
-              {health.isSuccess
-                ? `Scanner v${health.data.version} online`
-                : health.isError
-                  ? "Scanner unreachable"
-                  : "Connecting to scanner"}
-            </span>
-          </p>
+          <ApiStatus />
           {account.status !== "off" && (
             <NavLink to="/account" className={navClass}>
               {account.status === "signed-in" ? account.username : "Account"}

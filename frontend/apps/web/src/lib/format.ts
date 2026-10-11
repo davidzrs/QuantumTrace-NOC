@@ -16,6 +16,18 @@ const OBSERVATION_LABELS: Record<string, string> = {
 
 export const observationLabel = (o: string) => OBSERVATION_LABELS[o] ?? o;
 
+const OBSERVATION_NOTES: Record<string, string> = {
+  negotiated: "Seen in the captured traffic.",
+  executed: "Ran during a traced test run.",
+  configured: "Set in a configuration file or a cloud export.",
+  "in-code": "Called in the source code.",
+  permitted: "A policy allows it; nothing here shows it in use.",
+  offered: "One side offered it; the other may have picked something else.",
+};
+
+/** One line on where the evidence comes from, under its label. */
+export const observationNote = (o: string) => OBSERVATION_NOTES[o] ?? "";
+
 const CONFIDENCE_LABELS: Record<string, string> = {
   high: "High confidence, read directly from the input.",
   medium: "Medium confidence, inferred, e.g. a key size taken from elsewhere in the file.",

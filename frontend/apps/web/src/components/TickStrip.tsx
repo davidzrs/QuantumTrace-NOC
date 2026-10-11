@@ -166,22 +166,33 @@ export function TickStrip({
           })}
         </div>
       </div>
+      {/* The legend filters too: its names are easier to aim at than a tier's ticks. */}
       <div className="flex gap-3">
         {groups.map((g) => (
-          <div
+          <button
             key={g.tier}
-            className="flex min-w-2.5 basis-0 flex-col gap-0.5 border-t border-rule-strong pt-2 transition-opacity duration-200"
+            type="button"
+            aria-pressed={focus === g.tier}
+            aria-label={`Show only ${TIER[g.tier].label.toLowerCase()} findings`}
+            onClick={() => onSelect(g.tier, undefined)}
+            onMouseEnter={() => setHover(g.tier)}
+            onMouseLeave={() => setHover(null)}
+            className="group flex min-w-2.5 basis-0 cursor-pointer flex-col gap-0.5 border-t border-rule-strong p-0 pt-2 text-left transition-opacity duration-200"
             style={{ flexGrow: g.n, opacity: dimmed(g.tier) ? 0.25 : 1 }}
           >
             <span className="flex flex-wrap items-center gap-x-2 font-semibold" style={{ color: TIER[g.tier].color }}>
               <span className="font-mono font-medium">{g.n}</span>
-              {TIER[g.tier].label}
+              <span className="underline decoration-transparent decoration-2 underline-offset-4 transition-colors group-hover:decoration-current group-aria-pressed:decoration-current">
+                {TIER[g.tier].label}
+              </span>
             </span>
             <span className="truncate text-xs text-ink-muted">{TIER[g.tier].threat}</span>
-          </div>
+          </button>
         ))}
       </div>
-      <p className="text-xs text-ink-faint">Hover a tier to split it by source. Click a tier, or one of its sources, to filter the list below.</p>
+      <p className="text-xs text-ink-faint">
+        Click a tier, its name or one of its sources to filter the list below. Hover to split it by source.
+      </p>
     </section>
   );
 }

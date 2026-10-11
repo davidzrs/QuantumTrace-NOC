@@ -7,6 +7,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN npm install -g "$(node -p "require('./package.json').packageManager")"
 COPY frontend ./frontend
 COPY extensions ./extensions
+# The VS Code extension the site offers for download ships the Python tracer from the backend.
+COPY backend/src/quantumtrace/tracers/python ./backend/src/quantumtrace/tracers/python
 RUN pnpm install --frozen-lockfile
 ARG VITE_API_URL=http://localhost:8000
 ENV VITE_API_URL=$VITE_API_URL
