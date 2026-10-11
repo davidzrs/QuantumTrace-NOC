@@ -18,6 +18,7 @@ function finding(tier: RiskTier, usage: string, observation = "negotiated", name
       flags: [],
       evidence: { source_type: "network", location: "h:443", line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {}, execution: null },
       more_evidence: [],
+      library: null,
     },
     classification: {
       rule_id: name,
@@ -53,6 +54,7 @@ function result(findings: Finding[]): ScanResult {
     score_by_source: {},
     limitations: [],
     errors: [],
+    libraries: [],
   };
 }
 

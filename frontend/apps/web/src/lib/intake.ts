@@ -8,7 +8,11 @@ import type { UploadItem } from "@quantumtrace/sdk";
 export type Kind = "code" | "cloud" | "capture" | "archive";
 
 export const KINDS: { id: Kind; label: string; hint: string }[] = [
-  { id: "code", label: "Source code", hint: "Python, Java and Go" },
+  {
+    id: "code",
+    label: "Source code",
+    hint: "Python, Java and Go, plus SSH and TLS configs, certificates and keys, and Java builds",
+  },
   { id: "cloud", label: "Cloud exports", hint: "JSON from AWS KMS, ACM and load balancers" },
   { id: "capture", label: "Packet captures", hint: "TLS and SSH handshakes" },
   { id: "archive", label: "Zip archives", hint: "Unpacked and scanned on the server" },
@@ -18,12 +22,47 @@ const KIND_BY_EXT: Record<string, Kind> = {
   ".py": "code",
   ".java": "code",
   ".go": "code",
+  // certificates, keys, server configs and Java builds: the backend reads them as code too
+  ".pem": "code",
+  ".crt": "code",
+  ".cer": "code",
+  ".der": "code",
+  ".key": "code",
+  ".pub": "code",
+  ".csr": "code",
+  ".p12": "code",
+  ".pfx": "code",
+  ".conf": "code",
+  ".class": "code",
+  ".jar": "code",
+  ".war": "code",
+  ".ear": "code",
   ".json": "cloud",
   ".pcap": "capture",
   ".pcapng": "capture",
   ".cap": "capture",
   ".zip": "archive",
 };
+
+/**
+ * What the upload zone lists, grouped as people know the files. A test checks that every entry
+ * here is something `kindOf` accepts, so the page never promises a type the upload drops.
+ */
+export const ACCEPTED_FILES: { label: string; files: string[] }[] = [
+  { label: "Cloud exports", files: [".json"] },
+  { label: "Source code", files: [".py", ".java", ".go"] },
+  { label: "Packet captures", files: [".pcap", ".pcapng"] },
+  { label: "Server configs", files: ["sshd_config", ".conf"] },
+  { label: "Certificates and keys", files: [".pem", ".crt", ".der", ".csr", ".key", ".pub", ".p12"] },
+  { label: "Java builds", files: [".jar", ".class"] },
+  { label: "Archives", files: [".zip"] },
+];
+
+/** Files a scanner knows by name: OpenSSH configs and keys. */
+const SCANNED_NAMES = /^(sshd_config|ssh_config|authorized_keys2?|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|ssh_host_\w+_key(\.pub)?)$/;
+
+/** Source files: the source scanner skips any over MAX_CODE_BYTES. */
+const SOURCE_EXTS = new Set([".py", ".java", ".go"]);
 
 /** Folders never worth uploading: VCS metadata, dependencies, build output, caches. */
 export const IGNORED_DIRS = new Set([
@@ -32,8 +71,11 @@ export const IGNORED_DIRS = new Set([
   "dist", "build", "target", "out",
 ]);
 
-/** Generated files that look like cloud exports but never are. */
-const IGNORED_FILES = new Set(["package-lock.json", "composer.lock", "yarn.lock", "pnpm-lock.yaml"]);
+/** JSON that looks like a cloud export but never is: dependency lists and lockfiles name
+ * packages, not the cryptography they run, so no scanner finds anything in them. */
+const IGNORED_FILES = new Set([
+  "package.json", "package-lock.json", "composer.json", "composer.lock", "yarn.lock", "pnpm-lock.yaml",
+]);
 
 /** The source scanner skips files above this size, so don't spend upload budget on them. */
 export const MAX_CODE_BYTES = 2 * 1024 * 1024;
@@ -60,7 +102,8 @@ export function extOf(path: string): string {
 }
 
 /** The kind of a file a scanner reads, or undefined when none does. */
-export const kindOf = (path: string): Kind | undefined => KIND_BY_EXT[extOf(path)];
+export const kindOf = (path: string): Kind | undefined =>
+  SCANNED_NAMES.test(path.slice(path.lastIndexOf("/") + 1)) ? "code" : KIND_BY_EXT[extOf(path)];
 
 function ignoredDir(path: string): string | undefined {
   const parts = path.split("/").slice(0, -1);
@@ -88,14 +131,14 @@ export function planIntake(picked: Picked[], skippedDirs: string[] = []): Intake
       continue;
     }
     const ext = extOf(p.path);
-    const kind = KIND_BY_EXT[ext];
+    const kind = kindOf(p.path);
     const name = p.path.slice(p.path.lastIndexOf("/") + 1);
     if (!kind || IGNORED_FILES.has(name)) {
       byExt.set(ext || "no extension", (byExt.get(ext || "no extension") ?? 0) + 1);
       total += 1;
       continue;
     }
-    if (kind === "code" && p.file.size > MAX_CODE_BYTES) {
+    if (kind === "code" && SOURCE_EXTS.has(ext) && p.file.size > MAX_CODE_BYTES) {
       oversized += 1;
       total += 1;
       continue;

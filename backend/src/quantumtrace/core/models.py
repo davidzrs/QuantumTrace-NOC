@@ -145,10 +145,33 @@ class CryptoAsset(Model):
         default_factory=list,
         description="Further places with the identical asset (e.g. repeat sessions to one server)",
     )
+    library: str | None = Field(
+        default=None,
+        description="Id of the CryptoLibrary that provides it (`ScanResult.libraries`), when the "
+        "input shows which: the import behind a call in code, the package in a binary",
+    )
 
     @property
     def all_evidence(self) -> list[Evidence]:
         return [self.evidence, *self.more_evidence]
+
+
+class CryptoLibrary(Model):
+    """A cryptographic library that code calls into, or that a build bundles (a jar's
+    pom.properties, a Go binary's build info). Findings point at it through
+    `CryptoAsset.library`."""
+
+    id: str = Field(description="ecosystem:name, e.g. pypi:cryptography, go:stdlib")
+    name: str = Field(description="As people call it, e.g. cryptography, Go standard library")
+    ecosystem: str = Field(description="pypi, golang, maven, or python/go/java for a stdlib")
+    version: str | None = Field(
+        default=None, description="As bundled; None when only code shows the library"
+    )
+    purl: str | None = Field(default=None, description="Package URL, for packages")
+    note: str | None = Field(default=None, description="e.g. which versions ship ML-KEM")
+    evidence: list[Evidence] = Field(
+        default_factory=list, description="Where a build bundles it; empty when only code shows it"
+    )
 
 
 class Classification(Model):
@@ -216,6 +239,11 @@ class ScanResult(Model):
     )
     limitations: list[ScanNote] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    libraries: list[CryptoLibrary] = Field(
+        default_factory=list,
+        description="Cryptographic libraries called or bundled; the CBOM lists each as a "
+        "library component that provides the algorithms its findings use",
+    )
 
 
 class ScanSummary(Model):

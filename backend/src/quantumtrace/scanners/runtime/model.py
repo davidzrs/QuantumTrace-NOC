@@ -35,6 +35,7 @@ class Site:
     context: dict[str, str]
     variant: str | None
     observed: str
+    library: str | None  # id of the library the traced call belongs to, e.g. pypi:cryptography
     evidence: Evidence  # with `execution` filled in and the snippet as the file reads now
 
 

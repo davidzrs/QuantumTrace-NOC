@@ -37,6 +37,10 @@ const USAGE_LABELS: Record<string, string> = {
   "ssh-mac": "SSH MAC",
   "ssh-kex-hash": "SSH exchange hash",
   "ssh-signature-digest": "SSH signature digest",
+  "ssh-user-key": "SSH user key",
+  // certificate and key files
+  "private-key": "Private key",
+  "public-key": "Public key",
 };
 
 export function usageLabel(usage: string | null | undefined): string {

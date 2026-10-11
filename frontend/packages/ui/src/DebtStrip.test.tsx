@@ -18,6 +18,7 @@ function finding(id: string, tier: RiskTier): Finding {
       flags: [],
       evidence: { source_type: "cloud", location: "arn:x", line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {}, execution: null },
       more_evidence: [],
+      library: null,
     },
     classification: {
       rule_id: "rsa",

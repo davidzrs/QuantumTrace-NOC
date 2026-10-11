@@ -17,7 +17,6 @@ from quantumtrace.core.models import (
     CryptoAsset,
     Evidence,
     Execution,
-    Exposure,
     Observation,
     SourceType,
 )
@@ -111,18 +110,19 @@ def _asset(site: Site, found: tuple[CryptoAsset, Evidence] | None, location: str
     variant = variant_name(algorithm, key_size, sorted(flags), evidence.context) or site.variant
     if variant is None and source is not None and source.key_size == key_size:
         variant = source.variant
-    return CryptoAsset(
-        observed=source.observed if source is not None else site.observed,
-        algorithm=algorithm,
-        variant=variant,
-        key_size=key_size,
-        usage=usage,
-        observation=Observation.EXECUTED,
-        confidence=Confidence.HIGH,
-        exposure=source.exposure if source is not None else Exposure.UNKNOWN,
-        flags=sorted(flags),
-        evidence=evidence,
-    )
+    seen = {
+        "variant": variant,
+        "key_size": key_size,
+        "usage": usage,
+        "observation": Observation.EXECUTED,
+        "confidence": Confidence.HIGH,
+        "flags": sorted(flags),
+        "evidence": evidence,
+        "more_evidence": [],
+    }
+    if source is not None:  # everything else the code scan knew stays: its text, its library
+        return source.model_copy(update=seen)
+    return CryptoAsset(observed=site.observed, algorithm=algorithm, library=site.library, **seen)
 
 
 def _add(executed: dict[tuple[object, ...], CryptoAsset], asset: CryptoAsset) -> None:

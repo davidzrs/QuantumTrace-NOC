@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from quantumtrace.core.libraries import module_library
 from quantumtrace.core.models import (
     CryptoAsset,
     Evidence,
@@ -310,5 +311,6 @@ def _cluster_sites(file: str, cluster: list[_Call], command: str, files: _Files)
             context=context,
             variant=next((c.seen.variant for c in members if c.seen.variant), None),
             observed=lead.api.removeprefix("cryptography."),
+            library=module_library(language, lead.api.partition(".")[0]),
             evidence=evidence,
         )

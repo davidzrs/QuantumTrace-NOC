@@ -24,6 +24,7 @@ export function finding(overrides: Overrides = {}): Finding {
       exposure: "unknown",
       flags: [],
       more_evidence: [],
+      library: null,
       ...overrides.asset,
       evidence: {
         source_type: "code",

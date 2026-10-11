@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_CODE_BYTES, mergePicked, planIntake, type Picked } from "./intake";
+import { ACCEPTED_FILES, kindOf, MAX_CODE_BYTES, mergePicked, planIntake, type Picked } from "./intake";
 
 const pick = (path: string, size = 10): Picked => ({ file: new File(["x".repeat(size)], path), path });
 
@@ -25,6 +25,31 @@ describe("planIntake", () => {
     expect(plan.skipped.total).toBe(4);
     expect(plan.skipped.byExt[0]).toEqual([".ts", 2]);
     expect(plan.roots).toEqual(["repo/"]);
+  });
+
+  it("sends configs, certificates and Java builds whatever their size, not dependency lists", () => {
+    const plan = planIntake([
+      pick("deploy/sshd_config"),
+      pick("deploy/nginx/site.conf"),
+      pick("deploy/certs/api.pem"),
+      pick("deploy/keys/id_ed25519.pub"),
+      pick("release/vault.jar", MAX_CODE_BYTES + 1),
+      pick("repo/requirements.txt"),
+      pick("repo/pyproject.toml"),
+      pick("repo/go.mod"),
+      pick("repo/pom.xml"),
+      pick("repo/package.json"),
+      pick("repo/notes.txt"),
+    ]);
+    expect(plan.send.map((p) => p.path)).toEqual([
+      "deploy/sshd_config",
+      "deploy/nginx/site.conf",
+      "deploy/certs/api.pem",
+      "deploy/keys/id_ed25519.pub",
+      "release/vault.jar",
+    ]);
+    expect(plan.counts.code).toBe(5); // the backend reads all of them as code
+    expect(plan.skipped.oversized).toBe(0); // the size cap is for source files only
   });
 
   it("leaves out dependency folders, lockfiles and oversized source", () => {
@@ -60,3 +85,15 @@ describe("mergePicked", () => {
     expect(merged.map((p) => p.path)).toEqual(["captures.zip", "repo/a.py", "repo/b.go"]);
   });
 });
+
+describe("ACCEPTED_FILES", () => {
+  it("lists only what the upload sends", () => {
+    for (const { files } of ACCEPTED_FILES) {
+      for (const file of files) {
+        const path = `repo/${file.startsWith(".") ? `example${file}` : file}`;
+        expect(kindOf(path), file).toBeDefined();
+      }
+    }
+  });
+});
+

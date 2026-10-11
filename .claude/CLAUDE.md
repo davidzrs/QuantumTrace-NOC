@@ -33,17 +33,19 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | --- | --- |
 | `backend/src/quantumtrace/core/` | models, classifier, scoring, engine, `roles.py` (usage → role, decides `hndl`) |
 | `backend/src/quantumtrace/rules/` | `algorithms.yaml`, `aws_elb_policies.yaml`, `tls.py` (cipher-suite decomposition) |
-| `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe), `runtime/` (reads `.quantumtrace/*.jsonl` from a traced run and merges it with the code findings) |
+| `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`; `imports.py` ties each call to its library), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe), `keys/` (certificate and key files; `material.py` shared with the probe), `config/` (sshd_config, nginx, Apache), `binary/` (Java bytecode and jars, Go executables), `runtime/` (reads `.quantumtrace/*.jsonl` from a traced run and merges it with the code findings) |
 | `backend/src/quantumtrace/tracers/` | `python/`: the stand-alone tracer (`sitecustomize.py` + `quantumtrace_tracer.py`, stdlib only, `sys.monitoring`) that a traced run puts on `PYTHONPATH`. It records, never classifies |
+| `backend/src/quantumtrace/core/libraries.py` | crypto library catalogue; ties findings to the library their code imports or their build bundles (jar `pom.properties`, Go build info), which the CBOM lists as `library` components that `provide` algorithms. Dependency manifests are not read: they never prove an algorithm |
 | `backend/src/quantumtrace/cbom/` | CycloneDX 1.6 export |
 | `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`; scans in memory or Upstash Redis (`store/`); `github.py` fetches public repos for `/scans/github` (refs from git's `info/refs`, zip from codeload, no GitHub API rate limit) |
-| `backend/tests/` | golden tests against `samples/` for every vector |
+| `backend/tests/` | golden tests against `samples/` and `personal-samples/` for every vector |
 | `frontend/apps/web/` | React 19 + Vite + Tailwind v4 dashboard (deployed to Vercel) |
 | `frontend/packages/sdk/` | generated OpenAPI types + typed client |
 | `frontend/packages/ui/` | `TierBadge`, `DebtStrip`, design tokens, shared with extension popups |
 | `extensions/browser/` | WXT popup (Chrome MV3 + Firefox) over `POST /api/v1/probes/tls` |
 | `extensions/vscode/` | VS Code extension (`quantumtrace-vscode`): highlights code findings, explains and dismisses them, via the CLI or the API; "Fix with AI" applies the API's `/fix` rewrite in the editor; "Run tests with the runtime tracer" shows which marked lines really ran |
 | `samples/` | organiser data (READMEs in Portuguese). Read-only: never edit to make a test pass |
+| `personal-samples/` | our samples for the file types `samples/` lacks (certificates, server configs, binaries); golden tests assert on them. Sources and rebuild steps in `backend/tests/sample_sources/` |
 
 ## Commands
 
@@ -117,6 +119,9 @@ cd backend && uv run quantumtrace scan ../samples/cloud-posture -f cbom -o out.c
 
 - **Palette:** colour is reserved for risk. Crimson = Shor, ochre = Grover, teal = resilient.
   Everything else is ink on porcelain (tokens in `packages/ui/src/tokens.css`, with dark mode).
+  One deliberate exception: "Fix code with AI" wears Gemini's blue → purple → rose gradient
+  (`--qt-ai`, `.btn-ai`, `.ai-chip` in the web app's `index.css`) so the feature stands out and
+  never reads as a risk tier. Keep it to that feature.
 - **Type:** Public Sans for everything. JetBrains Mono **only** for real identifiers (ARNs, OIDs,
   cipher suites, paths), never for labels.
 - **Hero:** the report leads with a plain sentence ("25 of 69 assets break under Shor's algorithm")
@@ -188,6 +193,11 @@ Both halves run on Vercel as two projects from this repo (see the `deploy` skill
   zip download, and only scannable files are unpacked, against `max_unpacked_mb`. Public repos
   only: private ones answer 401 like missing ones. Don't add a server-side GitHub token without
   per-user auth, or any caller could read every private repo that token can see.
+- **Website scans.** The home page's website card (`components/LinkScan.tsx`, beside the GitHub
+  one) reads host and port from whatever is pasted (`lib/site.ts`: a link, a bare domain or
+  `host:port`; `http://` is checked on 443) and calls `POST /probes/tls`, the same live handshake
+  as the browser extension. It saves a normal scan, so the report, history and account work as
+  for any other. Public addresses only, unless the API sets `QT_PROBE_PRIVATE`.
 
 ## Skills
 

@@ -106,7 +106,8 @@ def test_sample_run_marks_what_executed(sample_run: tuple[Path, ScanResult]) -> 
     assert ran is not None and ran.ran and ran.calls == 1
     assert ran.parameters == {"api": "rsa.generate", "key_size": "1024"}
     assert ran.run == "python license_token.py"
-    # the source scan's own text and snippet stay: the trace adds to the finding
+    # the source scan's own text, snippet and library stay: the trace adds to the finding
+    assert generated.asset.library == "pypi:cryptography"
     assert generated.asset.observed.startswith("rsa.generate_private_key(")
     assert "key_size=1024" in (generated.asset.evidence.snippet or "")
 
@@ -256,6 +257,7 @@ def test_an_algorithm_named_by_a_variable_is_found_with_its_tests(
     md5 = one(result, "tokens.py", "md5", "hash")  # `hashlib.new(ALGORITHM)`: only a run knows
     assert md5.asset.observation is Observation.EXECUTED
     assert md5.asset.observed == "hashlib.new"
+    assert md5.asset.library == "python:stdlib"  # named by the tracer: no import to read it from
     place = md5.asset.evidence
     assert place.line == 12
     assert "hashlib.new(ALGORITHM, data)" in (place.snippet or "")
@@ -640,10 +642,10 @@ def test_cbom_occurrences_say_what_ran(sample_run: tuple[Path, ScanResult]) -> N
     _, result = sample_run
     bom = to_cyclonedx(result)
     assert JsonStrictValidator(SchemaVersion.V1_6).validate_str(json.dumps(bom)) is None
-    contexts = [
-        o["additionalContext"] for c in bom["components"] for o in c["evidence"]["occurrences"]
-    ]
-    assert sum(len(c["evidence"]["occurrences"]) for c in bom["components"]) == sum(
+    # the CBOM also lists libraries; the occurrences are on the cryptographic assets
+    assets = [c for c in bom["components"] if c["type"] == "cryptographic-asset"]
+    contexts = [o["additionalContext"] for c in assets for o in c["evidence"]["occurrences"]]
+    assert sum(len(c["evidence"]["occurrences"]) for c in assets) == sum(
         len(f.asset.all_evidence) for f in result.findings
     )
     assert (
@@ -654,7 +656,7 @@ def test_cbom_occurrences_say_what_ran(sample_run: tuple[Path, ScanResult]) -> N
         "[in-code, high confidence, not run in the traced run] hash observed=hashlib.md5"
         in contexts
     )
-    rsa = next(c for c in bom["components"] if c["bom-ref"].startswith("crypto/rsa-1024"))
+    rsa = next(c for c in assets if c["bom-ref"].startswith("crypto/rsa-1024"))
     observations = [
         p["value"] for p in rsa["properties"] if p["name"] == "quantumtrace:observation"
     ]

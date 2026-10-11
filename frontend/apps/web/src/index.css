@@ -32,6 +32,11 @@
   --qt-unknown: #9aa5b1;
   --qt-unknown-wash: rgba(154, 165, 177, 0.13);
 
+  /* AI fixes wear Gemini's blue, purple and rose: the one colour outside the risk palette, so
+     the feature reads as a different kind of thing from a finding's tier. */
+  --qt-ai: linear-gradient(100deg, #4796e3 0%, #9177c7 52%, #ca6673 100%);
+  --qt-ai-glow: rgba(145, 119, 199, 0.5);
+
   --qt-focus: #e8ebef;
   --qt-font-sans: "Instrument Sans", system-ui, sans-serif;
   --qt-font-display: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
@@ -242,6 +247,65 @@
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  /* "Fix code with AI": a gradient border with a soft glow; solid gradient once picked or as the
+     action itself. Pairs with .btn for size, or stands alone as the chip on a flagged line. */
+  .btn-ai,
+  .btn-ai:hover {
+    border-color: transparent;
+    background:
+      linear-gradient(var(--qt-surface), var(--qt-surface)) padding-box,
+      var(--qt-ai) border-box;
+    box-shadow: 0 0 18px -6px var(--qt-ai-glow);
+  }
+  .btn-ai:hover {
+    background:
+      linear-gradient(var(--qt-raise), var(--qt-raise)) padding-box,
+      var(--qt-ai) border-box;
+    box-shadow: 0 0 22px -4px var(--qt-ai-glow);
+  }
+  .btn-ai[aria-pressed="true"],
+  .btn-ai-solid,
+  .btn-ai-solid:hover {
+    border-color: transparent;
+    background: var(--qt-ai) border-box;
+    color: #fff;
+    box-shadow: 0 0 22px -4px var(--qt-ai-glow);
+  }
+  .btn-ai-solid:not(:disabled):hover {
+    filter: brightness(1.08);
+  }
+  .ai-text {
+    background: var(--qt-ai);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .ai-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background:
+      linear-gradient(var(--qt-surface), var(--qt-surface)) padding-box,
+      var(--qt-ai) border-box;
+    box-shadow: 0 0 14px -5px var(--qt-ai-glow);
+    font-family: var(--qt-font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+  .ai-chip:hover {
+    background:
+      linear-gradient(var(--qt-raise), var(--qt-raise)) padding-box,
+      var(--qt-ai) border-box;
   }
 }
 

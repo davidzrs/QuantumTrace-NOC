@@ -69,6 +69,9 @@ def scan(src: SourceFile) -> None:
     for m in re.finditer(r"\bKeyAgreement\.getInstance" + _STR_ARG, text):
         if ka_name := _arg(src, m):
             src.emit(m.start(), ka_name, KPG.get(ka_name.upper(), ka_name), "key-agreement")
+    for m in re.finditer(r"\bKEM\.getInstance" + _STR_ARG, text):  # javax.crypto.KEM, Java 21+
+        if kem := _arg(src, m):
+            src.emit(m.start(), kem, {"DHKEM": "ECDH"}.get(kem.upper(), kem), "key-agreement")
 
     for m in re.finditer(r"\bSecretKeyFactory\.getInstance" + _STR_ARG, text):
         kdf = _arg(src, m) or ""

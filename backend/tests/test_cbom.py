@@ -44,7 +44,8 @@ def test_cbom_keeps_cipher_modes_and_protocol_suites(samples: Path) -> None:
 
 def test_cbom_occurrences_are_precise(samples: Path) -> None:
     bom = to_cyclonedx(run_scan([samples]))
-    locations = [o["location"] for c in bom["components"] for o in c["evidence"]["occurrences"]]
+    assets = [c for c in bom["components"] if c["type"] == "cryptographic-asset"]
+    locations = [o["location"] for c in assets for o in c["evidence"]["occurrences"]]
     assert any("#$.LoadBalancers[" in loc for loc in locations)  # cloud: JSON path
     assert any("/packet-" in loc for loc in locations)  # network: packet number
     limits = [p for p in bom["metadata"]["properties"] if p["name"] == "quantumtrace:limitation"]
@@ -65,3 +66,26 @@ def test_cbom_marks_harvest_now_decrypt_later(samples: Path) -> None:
               if "harvest-now-decrypt-later" in o["additionalContext"]]  # fmt: skip
     assert marked and all("ENCRYPT_DECRYPT" in m for m in marked)
     assert hndl(names["AES-256-GCM"]) == ["false"]
+
+
+def test_cbom_lists_libraries_and_what_they_provide(samples: Path, personal_samples: Path) -> None:
+    result = run_scan(
+        [samples / "sample-repos", personal_samples / "binaries" / "legacy-vault.jar"]
+    )
+    bom = to_cyclonedx(result)
+    assert JsonStrictValidator(SchemaVersion.V1_6).validate_str(json.dumps(bom)) is None
+
+    libraries = {c["name"]: c for c in bom["components"] if c["type"] == "library"}
+    crypto = libraries["cryptography"]  # the code imports it; nothing in the inputs pins a version
+    assert crypto["purl"] == "pkg:pypi/cryptography" and "version" not in crypto
+    assert "evidence" not in crypto
+    bundled = libraries["org.bouncycastle:bcprov-jdk18on"]  # the jar's pom.properties pins it
+    assert bundled["version"] == "1.78.1"
+    assert bundled["evidence"]["occurrences"][0]["location"].endswith("/pom.properties")
+    assert "Java Cryptography Architecture (JDK)" in libraries
+
+    refs = {c["bom-ref"] for c in bom["components"]}
+    provides = {d["ref"]: set(d["provides"]) for d in bom["dependencies"]}
+    assert all(p <= refs for p in provides.values())  # every link resolves
+    # license_token.py generates its RSA-1024 key through cryptography
+    assert any(ref.startswith("crypto/rsa-1024") for ref in provides[crypto["bom-ref"]])

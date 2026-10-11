@@ -30,6 +30,7 @@ function tlsFinding(usage: string, algorithm: string): Finding {
         context: { packet: "12" },
       },
       more_evidence: [],
+      library: null,
     },
     classification: {
       rule_id: algorithm.toLowerCase(),
