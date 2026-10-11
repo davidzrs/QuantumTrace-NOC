@@ -79,6 +79,39 @@ def test_python_ed25519_is_shor_vulnerable(result: ScanResult) -> None:
     assert ("critical", "EdDSA") in tiers(in_file(result, "python/webhook_signature.py"))
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["python/webhook_signature.py", "java/DeviceAttestation.java", "go/agent-enrollment/main.go"],
+)
+def test_ed25519_generate_and_sign_are_reported_alike_in_every_language(
+    result: ScanResult, name: str
+) -> None:
+    eddsa = [f for f in in_file(result, name) if f.classification.name == "EdDSA"]
+    assert sorted(f.asset.usage or "" for f in eddsa) == ["key-generation", "signature"]
+
+
+def test_python_ed25519_sign_is_a_method_call_on_the_key(result: ScanResult) -> None:
+    by_usage = {f.asset.usage: f for f in in_file(result, "python/webhook_signature.py")}
+    assert by_usage["key-generation"].asset.evidence.line == 5  # Ed25519PrivateKey.generate()
+    assert by_usage["signature"].asset.evidence.line == 10  # private_key.sign(payload)
+    assert by_usage["signature"].asset.confidence is Confidence.MEDIUM  # key type inferred
+
+
+def test_python_sign_with_padding_is_not_read_as_ed25519(tmp_path: Path) -> None:
+    code = """from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ed25519, padding
+
+def sign_both(rsa_key, data):
+    edkey = ed25519.Ed25519PrivateKey.generate()
+    return rsa_key.sign(data, padding.PSS(padding.MGF1(hashes.SHA256()), 32), hashes.SHA256())
+"""
+    names = {
+        (f.classification.name, f.asset.usage) for f in scan_source(tmp_path, "s.py", code).findings
+    }
+    assert ("EdDSA", "signature") not in names
+    assert ("EdDSA", "key-generation") in names
+
+
 # --- Java --------------------------------------------------------------------------------
 def test_java_sha1_with_rsa(samples: Path) -> None:
     result = run_scan([samples / REPOS / "java/ReceiptSigner.java"])

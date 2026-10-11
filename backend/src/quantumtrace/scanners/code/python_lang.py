@@ -81,8 +81,18 @@ def scan(src: SourceFile) -> None:
         )
     for m in re.finditer(r"\bec\.ECDH\s*\(", text):
         src.emit(m.start(), "ec.ECDH", "ECDH", "key-agreement")
+    edwards: list[str] = []
     for m in re.finditer(r"\b(ed25519|ed448)\.(Ed25519|Ed448)Private", text):
-        src.emit(m.start(), m.group(0), m.group(2), "signature")
+        edwards.append(m.group(2))
+        src.emit(m.start(), m.group(0), m.group(2), "key-generation")
+    if edwards:
+        # pyca signs with a method on the key object (`private_key.sign(data)`), so the call
+        # names no algorithm. In a file holding an Ed25519/Ed448 key, a one-argument .sign() is
+        # that key signing; RSA and ECDSA keys take a padding or algorithm argument too.
+        for m in re.finditer(r"\b[A-Za-z_][\w.]*\.sign\(", text):
+            if _one_argument(text, m.end() - 1):
+                src.emit(m.start(), m.group(0).rstrip("("), edwards[0], "signature",
+                         confidence=Confidence.MEDIUM)  # fmt: skip
     for m in re.finditer(r"\b(x25519|x448)\.(X25519|X448)Private", text):
         src.emit(m.start(), m.group(0), "ECDH", "key-agreement", context={"curve": m.group(2)})
     for m in re.finditer(r"\bdsa\.generate_private_key\(([^)]*)\)", text):
@@ -135,3 +145,19 @@ def _cipher(
     ctx = {"mode": mode} if mode else None
     src.emit(pos, observed, alg, "encryption", key_size=size, flags=flags, confidence=conf,
              context=ctx)  # fmt: skip
+
+
+def _one_argument(text: str, open_paren: int) -> bool:
+    """Whether the call whose `(` is at `open_paren` passes exactly one argument."""
+    depth = 0
+    for i in range(open_paren, len(text)):
+        c = text[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                return bool(text[open_paren + 1 : i].strip())
+        elif c == "," and depth == 1:
+            return False
+    return False

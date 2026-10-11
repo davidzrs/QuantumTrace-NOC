@@ -66,7 +66,7 @@ def describe(api: str, args: Mapping[str, object]) -> Seen | None:
             return Seen("ECDSA", "signature", bits, context=context)
         return Seen("ECDH", "key-agreement", bits, context=context)  # exchange, ec.ECDH()
     if group in EDWARDS:
-        return Seen(EDWARDS[group], "signature")
+        return Seen(EDWARDS[group], "key-generation" if what == "generate" else "signature")
     if group in MONTGOMERY:
         return Seen("ECDH", "key-agreement", context={"curve": MONTGOMERY[group]})
     if group == "dsa":
