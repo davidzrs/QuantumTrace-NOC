@@ -2,7 +2,7 @@ import type { Finding, RiskTier, ScanResult } from "@quantumtrace/sdk";
 import type { jsPDF } from "jspdf";
 import { FIX_BY, fixRows, type FixBy, type FixRow } from "./fix";
 import { algorithmLabel, placeLabel, plural, SOURCE_LABEL, SOURCES, usageLabel } from "./format";
-import { heroSub, tally } from "./summary";
+import { heroSub, NOTHING_FOUND, tally } from "./summary";
 import { TIER, TIERS } from "./tiers";
 
 /**
@@ -34,6 +34,7 @@ const MUTED = rgb("#5b6878");
 const FAINT = rgb("#8a96a5");
 const RULE = rgb("#d5dbe2");
 const RULE_STRONG = rgb("#aeb8c4");
+const PANEL = rgb("#eef1f5");
 const TIER_RGB: Record<RiskTier, Rgb> = {
   critical: rgb("#b3123f"),
   medium: rgb("#9a6a12"),
@@ -181,7 +182,7 @@ function draw(doc: jsPDF, result: ScanResult, reportUrl: string): void {
   para(
     all.length
       ? heroSub(counts)
-      : "None of the scanners recognised anything in these files. QuantumTrace reads AWS posture exports (JSON), Python, Java and Go source, and .pcap or .pcapng captures.",
+      : NOTHING_FOUND,
     { size: 10, c: MUTED, after: 7 },
   );
 
@@ -303,14 +304,43 @@ function draw(doc: jsPDF, result: ScanResult, reportUrl: string): void {
   }
 
   // ---------------------------------------------------------------- where the detail is
-  room(16);
-  y += 6;
-  para(
-    "For every finding with its file, line and NIST reference, open the full report, or export its CBOM (CycloneDX 1.6) from there.",
-    { size: 8.5, c: MUTED, after: 1 },
-  );
-  font(8.5);
-  doc.textWithLink(pdfText(reportUrl), MARGIN, y + 8.5 * PT, { url: reportUrl });
+  // A shaded callout rather than a footnote: this summary is the skim, the report is the substance.
+  const pad = 5;
+  const textX = MARGIN + 1.2 + pad;
+  const textW = PAGE_W - MARGIN - pad - textX;
+  const note =
+    "Every finding with its file, line, evidence and NIST reference, filters by source and tier, and the CBOM (CycloneDX 1.6) to export.";
+  font(9);
+  const noteLines = wrap(note, textW);
+  font(9.5, true);
+  const linkLines = wrap(reportUrl, textW);
+  const boxH = pad + lineH(11.5) + 1 + noteLines.length * lineH(9) + 2.5 + linkLines.length * lineH(9.5) + pad - 1;
+  room(boxH + 8);
+  y += 8;
+  fill(PANEL);
+  doc.rect(MARGIN, y, WIDTH, boxH, "F");
+  fill(INK);
+  doc.rect(MARGIN, y, 1.2, boxH, "F");
+  y += pad;
+  font(11.5, true);
+  write("The full details are in the online report", textX, y);
+  y += lineH(11.5) + 1;
+  font(9);
+  for (const line of noteLines) {
+    doc.text(line, textX, y, { baseline: "top" });
+    y += lineH(9);
+  }
+  y += 2.5;
+  font(9.5, true);
+  doc.setDrawColor(INK[0], INK[1], INK[2]);
+  doc.setLineWidth(0.25);
+  for (const line of linkLines) {
+    doc.text(line, textX, y, { baseline: "top" });
+    const w = doc.getTextWidth(line);
+    doc.line(textX, y + 9.5 * PT + 0.6, textX + w, y + 9.5 * PT + 0.6);
+    doc.link(textX, y, w, lineH(9.5), { url: reportUrl });
+    y += lineH(9.5);
+  }
 
   // ---------------------------------------------------------------- footer on every page
   const pages = doc.getNumberOfPages();

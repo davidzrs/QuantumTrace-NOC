@@ -1,5 +1,9 @@
 import type { Finding, RiskTier } from "@quantumtrace/sdk";
 
+/** Under "No cryptography found.": what the scanners read, so people know what to upload instead. */
+export const NOTHING_FOUND =
+  "None of the scanners recognised anything in these files. QuantumTrace reads AWS posture exports (JSON), Python, Java and Go source, SSH and TLS server configs, certificates and keys, Java and Go builds, and .pcap or .pcapng captures.";
+
 /** What the report's opening sentences are made of, counted over the findings in view. */
 export interface Tally {
   c: number;

@@ -107,6 +107,9 @@ cd backend && uv run quantumtrace scan ../samples/cloud-posture -f cbom -o out.c
 
 - **Palette:** colour is reserved for risk. Crimson = Shor, ochre = Grover, teal = resilient.
   Everything else is ink on porcelain (tokens in `packages/ui/src/tokens.css`, with dark mode).
+  One deliberate exception: "Fix code with AI" wears Gemini's blue → purple → rose gradient
+  (`--qt-ai`, `.btn-ai`, `.ai-chip` in the web app's `index.css`) so the feature stands out and
+  never reads as a risk tier. Keep it to that feature.
 - **Type:** Public Sans for everything. JetBrains Mono **only** for real identifiers (ARNs, OIDs,
   cipher suites, paths), never for labels.
 - **Hero:** the report leads with a plain sentence ("25 of 69 assets break under Shor's algorithm")

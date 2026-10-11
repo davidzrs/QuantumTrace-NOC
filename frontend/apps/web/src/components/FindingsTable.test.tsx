@@ -136,19 +136,25 @@ describe("FindingsTable", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("offers Fix with AI on code findings, and says how to turn it on when the API has it off", () => {
+  it("offers Fix code with AI on code findings, and says how to turn it on when the API has it off", () => {
     const code = finding(99);
     code.asset.evidence = { ...code.asset.evidence, source_type: "code", location: "app/auth.py", line: 3, snippet: "key = RSA.generate(1024)", snippet_start_line: 3 };
     const list = [code, finding(1)];
+    const AI = "Fix code with AI";
     const tabs = () => within(screen.getByRole("group", { name: "Show" })).getAllByRole("button").map((b) => b.textContent);
+    const chip = (panel: HTMLElement) => panel.querySelector("pre")?.querySelector("button") ?? null;
 
     render(table(undefined, list, client(true)));
     fireEvent.click(screen.getByRole("button", { name: /Open details for .* at app\/auth\.py/ }));
-    expect(tabs()).toEqual(["Details", "CBOM component", "Fix with AI"]);
-    fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: "Fix with AI" }));
+    expect(tabs()).toEqual(["Details", "CBOM component", AI]);
+    // The flagged line carries a shortcut to the same fix.
     const panel = screen.getByRole("dialog");
+    expect(chip(panel)?.textContent).toBe(AI);
+    fireEvent.click(chip(panel)!);
+    expect(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: AI }).getAttribute("aria-pressed")).toBe("true");
     expect(within(panel).getByText("key = RSA.generate(1024)")).toBeTruthy();
-    expect(within(panel).getAllByRole("button", { name: "Fix with AI" })).toHaveLength(2); // the tab and the action
+    expect(within(panel).getAllByRole("button", { name: AI })).toHaveLength(2); // the tab and the action
+    expect(chip(panel)).toBeNull();
 
     // Stepping to the cloud finding drops the tab and falls back to the details.
     fireEvent.click(within(panel).getByRole("button", { name: "Previous finding" }));
@@ -157,11 +163,12 @@ describe("FindingsTable", () => {
 
     render(table(undefined, list, client(false)));
     fireEvent.click(screen.getByRole("button", { name: /Open details for .* at app\/auth\.py/ }));
-    expect(tabs()).toEqual(["Details", "CBOM component", "Fix with AI"]);
-    fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: "Fix with AI" }));
+    expect(tabs()).toEqual(["Details", "CBOM component", AI]);
+    expect(chip(screen.getByRole("dialog"))).toBeNull(); // no shortcut to a fix that can't run
+    fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: AI }));
     const off = screen.getByRole("dialog");
     expect(within(off).getByText(/AI fixes are off on this API/)).toBeTruthy();
-    const action = within(off).getAllByRole("button", { name: "Fix with AI" }).find((b) => b.classList.contains("btn"));
+    const action = within(off).getAllByRole("button", { name: AI }).find((b) => b.classList.contains("btn-ai-solid"));
     expect(action).toHaveProperty("disabled", true);
   });
 
