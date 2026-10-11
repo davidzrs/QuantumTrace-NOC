@@ -225,3 +225,35 @@ def test_pq_policy_is_safe_on_tls13_but_keeps_classical_key_exchange(tmp_path: P
     assert "x25519mlkem768" in kex
     assert kex["ecdh"].classification.hndl
     assert "classical-fallback" in kex["ecdh"].asset.flags
+
+
+def test_kms_ed25519_key_is_eddsa_not_ecdsa(tmp_path: Path) -> None:
+    key = {"KeyArn": KEY_ARN, "KeyUsage": "SIGN_VERIFY", "KeySpec": "ECC_NIST_EDWARDS25519",
+           "SigningAlgorithms": ["ED25519_SHA_512"]}  # fmt: skip
+    result = scan_json(tmp_path, "kms.json", {"Keys": [key]})
+    [signing] = [f for f in result.findings if f.asset.usage == "SIGN_VERIFY"]
+    assert (signing.classification.rule_id, signing.asset.variant) == ("eddsa", "Ed25519")
+
+
+def test_kms_deprecated_spec_field_is_read(tmp_path: Path) -> None:
+    key = {"KeyArn": KEY_ARN, "KeyUsage": "ENCRYPT_DECRYPT", "CustomerMasterKeySpec": "RSA_2048"}
+    [finding] = scan_json(tmp_path, "kms.json", {"Keys": [key]}).findings
+    assert (finding.classification.rule_id, finding.classification.hndl) == ("rsa", True)
+
+
+def test_kms_list_keys_export_is_a_limitation_not_findings(tmp_path: Path) -> None:
+    keys = [{"KeyArn": KEY_ARN, "KeyId": KEY_ARN.rsplit("/", 1)[1]}]
+    result = scan_json(tmp_path, "list-keys.json", {"Keys": keys, "Truncated": False})
+    assert result.findings == []
+    assert any("no KeySpec" in n.message for n in result.limitations)
+
+
+def test_listener_certificates_export_is_not_read_as_acm(tmp_path: Path) -> None:
+    cert = "arn:aws:acm:eu-west-1:123456789012:certificate/a1b2c3d4-1111-4aaa-8bbb-000000000001"
+    certs = [
+        {"CertificateArn": cert, "IsDefault": True},
+        {"CertificateArn": cert, "IsDefault": False},
+    ]
+    result = scan_json(tmp_path, "listener-certs.json", {"Certificates": certs})
+    assert result.findings == []
+    assert any("no KeyAlgorithm" in n.message for n in result.limitations)

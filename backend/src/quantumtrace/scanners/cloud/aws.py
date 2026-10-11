@@ -92,7 +92,9 @@ class AwsCloudPostureScanner:
         for path, data in docs["kms"]:
             yield from self._kms(path, data)
         for path, data in docs["acm"]:
-            known_certs.update(c.get("CertificateArn", "") for c in data["Certificates"])
+            known_certs.update(
+                c.get("CertificateArn", "") for c in data["Certificates"] if c.get("KeyAlgorithm")
+            )
             cert_keys.update(_certificate_keys(data))
             yield from self._acm(path, data, listener_exposure)
         referenced: set[str] = set()
@@ -118,9 +120,14 @@ class AwsCloudPostureScanner:
             )
 
     # ------------------------------------------------------------------ KMS
-    def _kms(self, path: Path, data: dict[str, Any]) -> Iterable[CryptoAsset]:
+    def _kms(self, path: Path, data: dict[str, Any]) -> Iterable[CryptoAsset | ScanNote]:
+        unspecified = 0
         for i, key in enumerate(data["Keys"]):
-            spec: str = key.get("KeySpec", "")
+            # CustomerMasterKeySpec is the deprecated name of KeySpec, same value
+            spec: str = key.get("KeySpec") or key.get("CustomerMasterKeySpec", "")
+            if not spec:  # `aws kms list-keys` gives only ids: nothing to classify
+                unspecified += 1
+                continue
             usage: str = key.get("KeyUsage", "")
             algorithm, key_size, curve = _kms_key_spec(spec, usage)
             flags = []
@@ -160,12 +167,26 @@ class AwsCloudPostureScanner:
                         usage="signature-digest",
                         evidence=evidence.model_copy(update={"context": ctx}),
                     )
+        if unspecified:
+            yield ScanNote(
+                scanner=self.name,
+                message=(
+                    f"{path.name}: {unspecified} KMS key(s) have no KeySpec (`aws kms list-keys` "
+                    "lists only ids), so their algorithms are unknown. Include `aws kms "
+                    "describe-key` output to classify them."
+                ),
+            )
 
     # ------------------------------------------------------------------ ACM
     def _acm(
         self, path: Path, data: dict[str, Any], listener_exposure: dict[str, Exposure]
-    ) -> Iterable[CryptoAsset]:
+    ) -> Iterable[CryptoAsset | ScanNote]:
+        unspecified = 0
         for i, cert in enumerate(data["Certificates"]):
+            key_alg: str = cert.get("KeyAlgorithm", "")
+            if not key_alg:  # e.g. DescribeListenerCertificates: only ARN and IsDefault
+                unspecified += 1
+                continue
             in_use = cert.get("InUseBy", [])
             exposures = {listener_exposure.get(arn, Exposure.UNKNOWN) for arn in in_use}
             exposure = (
@@ -192,7 +213,6 @@ class AwsCloudPostureScanner:
                 ctx = {**ev.context, "json_path": f"$.Certificates[{idx}].{field_name}"}
                 return ev.model_copy(update={"context": ctx})
 
-            key_alg: str = cert.get("KeyAlgorithm", "")
             algorithm, key_size, curve = _kms_key_spec(key_alg, "SIGN_VERIFY")
             yield CryptoAsset(
                 observed=key_alg,
@@ -221,6 +241,15 @@ class AwsCloudPostureScanner:
                         exposure=exposure,
                         evidence=at("SignatureAlgorithm"),
                     )
+        if unspecified:
+            yield ScanNote(
+                scanner=self.name,
+                message=(
+                    f"{path.name}: {unspecified} certificate(s) have no KeyAlgorithm (a "
+                    "DescribeListenerCertificates export lists only ARNs), so their keys are "
+                    "unknown. Include `aws acm describe-certificate` output to classify them."
+                ),
+            )
 
     # ------------------------------------------------------------------ ELB
     def _elb(
@@ -403,6 +432,8 @@ def _kms_key_spec(spec: str, usage: str) -> tuple[str, int | None, str | None]:
     s = spec.upper()
     if m := re.fullmatch(r"RSA_(\d+)", s):
         return "RSA", int(m.group(1)), None
+    if s == "ECC_NIST_EDWARDS25519":  # KMS Ed25519 signing key, not a Weierstrass curve
+        return "Ed25519", None, None
     if s.startswith(("ECC_", "EC_")):
         curve = s.split("_")[-1]
         alg = "ECDH" if usage == "KEY_AGREEMENT" else "ECDSA"
@@ -429,6 +460,8 @@ _CURVE_NAMES = {"P256": "P-256", "PRIME256V1": "P-256", "P384": "P-384", "SECP38
 def _variant(algorithm: str, key_size: int | None, curve: str | None) -> str | None:
     if algorithm == "SYMMETRIC_DEFAULT":  # AWS KMS default symmetric key = AES-256-GCM
         return "AES-256-GCM"
+    if algorithm == "Ed25519":
+        return algorithm
     if curve:
         return f"{algorithm} {_CURVE_NAMES.get(curve, curve)}"
     if algorithm == "RSA" and key_size:
