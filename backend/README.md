@@ -13,3 +13,7 @@ uv run quantumtrace trace -- python -m pytest   # which crypto the code really r
 
 "Fix with AI" needs `GEMINI_API_KEY` where the API runs. With `docker compose`, put it in the
 repository root's `.env` (git-ignored); on Vercel, set it on the API project.
+
+`tests/test_edge_cases.py` lists what the scanners still miss or over-flag (aliased imports, JWT,
+TLS pinned in code, a shuffle scored like a break) as `xfail(strict=True)` tests. A fix that makes
+one pass turns it into a failure on purpose: drop its marker and it becomes a regular test.
