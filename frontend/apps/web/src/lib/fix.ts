@@ -1,31 +1,41 @@
-import type { Classification, Finding } from "@quantumtrace/sdk";
+import type { Finding } from "@quantumtrace/sdk";
 import { TIERS } from "./tiers";
 
 /**
  * When a finding needs fixing, from the engine's tier and classically-broken flag: anything a
  * classical computer already breaks among the Shor-exposed comes first, then the rest of Shor
- * (NIST deprecates it by 2030), then Grover hardening. Ordering only: tiers come from the engine.
+ * by NIST IR 8547's dates, then Grover hardening. Ordering only: tiers come from the engine.
  */
-export type FixBy = "now" | "before-2030" | "harden" | "review" | "none";
+export type FixBy = "now" | "before-2030" | "before-2035" | "harden" | "review" | "none";
 
 export const FIX_BY: Record<FixBy, { rank: number; label: string }> = {
   now: { rank: 0, label: "Fix now" },
   "before-2030": { rank: 1, label: "Before 2030" },
-  harden: { rank: 2, label: "Harden" },
-  review: { rank: 3, label: "Review" },
-  none: { rank: 4, label: "No action" },
+  "before-2035": { rank: 2, label: "Before 2035" },
+  harden: { rank: 3, label: "Harden" },
+  review: { rank: 4, label: "Review" },
+  none: { rank: 5, label: "No action" },
 };
 
-export function fixBy(c: Classification): FixBy {
+/** Flags that ask for a look even when the algorithm itself holds up (rules/algorithms.yaml). */
+const REVIEW_FLAGS = new Set(["hand-rolled-crypto"]);
+
+/**
+ * NIST IR 8547 deprecates 112-bit Shor-exposed keys (RSA-2048, DH-2048) after 2030 and disallows
+ * every size after 2035. A key of unknown size gets the earlier date.
+ */
+export function fixBy(f: Finding): FixBy {
+  const c = f.classification;
   switch (c.tier) {
     case "critical":
-      return c.classically_broken ? "now" : "before-2030";
+      if (c.classically_broken) return "now";
+      return c.classical_security_bits != null && c.classical_security_bits >= 128 ? "before-2035" : "before-2030";
     case "medium":
       return "harden";
     case "unknown":
       return "review";
     default:
-      return "none";
+      return f.asset.flags.some((x) => REVIEW_FLAGS.has(x)) ? "review" : "none";
   }
 }
 
@@ -61,7 +71,7 @@ export function fixRows(findings: Finding[], grouped = true): FixRow[] {
       row.members.push(f);
       row.sessions += sessions(f);
     } else {
-      byKey.set(k, { key: k, lead: f, members: [f], fixBy: fixBy(f.classification), sessions: sessions(f) });
+      byKey.set(k, { key: k, lead: f, members: [f], fixBy: fixBy(f), sessions: sessions(f) });
     }
   }
   const tierRank = (r: FixRow) => TIERS.indexOf(r.lead.classification.tier);

@@ -228,7 +228,7 @@ function Hero() {
             .
           </h1>
           <p className="max-w-[58ch] text-base leading-[1.55] text-pretty text-ink-muted">
-            QuantumTrace inventories every algorithm in your AWS exports, source code, packet captures
+            QuantumTrace inventories the algorithms in your AWS exports, source code, packet captures
             and live websites, rates each one Critical, Medium or Safe against quantum attack, and maps it
             to its NIST replacement. Every result exports as a CycloneDX 1.6 CBOM.
           </p>
@@ -249,7 +249,7 @@ function WhyNow() {
         <span className="font-semibold">Why now: harvest today, decrypt later</span>
         <span className="text-[13px] text-ink-faint">NIST IR 8547</span>
       </figcaption>
-      <div className="relative h-[124px]" role="img" aria-label="FIPS 203, 204 and 205 published in 2024. Traffic recorded today stays readable later. RSA, ECDSA and ECDH are deprecated in 2030 and disallowed in 2035.">
+      <div className="relative h-[124px]" role="img" aria-label="FIPS 203, 204 and 205 published in 2024. Traffic recorded today stays readable later. RSA, ECDSA and ECDH keys of 112-bit strength, such as RSA-2048, are deprecated after 2030, and every size is disallowed after 2035.">
         <div className="absolute inset-x-0 top-[62px] h-0.5 bg-rule-strong" />
         <div className="absolute top-[62px] right-0 left-[18%] h-0.5 bg-gradient-to-r from-critical to-critical/25" />
         <div className="absolute top-0 left-0 grid justify-items-start gap-1">
@@ -265,19 +265,19 @@ function WhyNow() {
         <div className="absolute top-14 left-[62%] size-3.5 rotate-45 bg-critical" />
         <div className="absolute top-0 left-[62%] grid -translate-x-1.5 gap-1">
           <span className="font-display text-[22px] leading-none font-bold">2030</span>
-          <span className="max-w-[16ch] text-xs leading-[1.2] text-ink-muted">RSA, ECDSA, ECDH deprecated</span>
+          <span className="max-w-[16ch] text-xs leading-[1.2] text-ink-muted">112-bit keys deprecated</span>
         </div>
         <div className="absolute top-[54px] right-0 size-[18px] rotate-45 bg-critical" />
         <div className="absolute top-[88px] right-0 grid justify-items-end gap-1 text-right">
           <span className="font-display text-[22px] leading-none font-bold">2035</span>
-          <span className="max-w-[14ch] text-xs leading-[1.2] text-ink-muted">Disallowed outright</span>
+          <span className="max-w-[14ch] text-xs leading-[1.2] text-ink-muted">Every size disallowed</span>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-3 border-t border-rule pt-4">
         {(
           [
             ["critical", "Asymmetric crypto Shor breaks: RSA, DSA, ECDSA, ECDH"],
-            ["medium", "Symmetric and hashes Grover weakens: AES-128, 3DES, SHA-1"],
+            ["medium", "Symmetric and hashes Grover weakens, and legacy protocols: AES-128, SHA-1, TLS 1.2"],
             ["safe", "Larger keys and post-quantum standards: AES-256, ML-KEM, ML-DSA"],
           ] as const
         ).map(([tier, text]) => (

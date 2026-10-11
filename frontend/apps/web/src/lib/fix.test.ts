@@ -7,7 +7,7 @@ const f = (
   rule: string,
   tier: RiskTier,
   exposure: Finding["asset"]["exposure"],
-  { broken = false, hndl = false, location = "x" } = {},
+  { broken = false, hndl = false, location = "x", bits = null as number | null, flags = [] as string[] } = {},
 ): Finding => ({
   id: String(seq++),
   asset: {
@@ -19,7 +19,7 @@ const f = (
     observation: "configured",
     confidence: "high",
     exposure,
-    flags: [],
+    flags,
     evidence: { source_type: "cloud", location, line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {}, execution: null },
     more_evidence: [],
     library: null,
@@ -35,7 +35,7 @@ const f = (
     nist_reference: null,
     replacement: null,
     oid: null,
-    classical_security_bits: null,
+    classical_security_bits: bits,
     nist_quantum_level: null,
     rationale: "",
   },
@@ -43,10 +43,20 @@ const f = (
 
 describe("fixBy", () => {
   it("puts classically broken Shor exposure first and keeps Grover as hardening", () => {
-    expect(fixBy(f("rsa-1024", "critical", "unknown", { broken: true }).classification)).toBe("now");
-    expect(fixBy(f("rsa", "critical", "internet").classification)).toBe("before-2030");
-    expect(fixBy(f("md5", "medium", "unknown", { broken: true }).classification)).toBe("harden");
-    expect(fixBy(f("aes-256", "safe", "unknown").classification)).toBe("none");
+    expect(fixBy(f("rsa-1024", "critical", "unknown", { broken: true }))).toBe("now");
+    expect(fixBy(f("rsa", "critical", "internet"))).toBe("before-2030");
+    expect(fixBy(f("md5", "medium", "unknown", { broken: true }))).toBe("harden");
+    expect(fixBy(f("aes-256", "safe", "unknown"))).toBe("none");
+  });
+
+  it("follows NIST IR 8547: 112-bit keys by 2030, stronger ones by 2035", () => {
+    expect(fixBy(f("rsa", "critical", "internet", { bits: 112 }))).toBe("before-2030");
+    expect(fixBy(f("ecdsa", "critical", "internet", { bits: 128 }))).toBe("before-2035");
+    expect(fixBy(f("rsa", "critical", "internet", { bits: 192 }))).toBe("before-2035");
+  });
+
+  it("asks for a review of hand-rolled code instead of calling it fine", () => {
+    expect(fixBy(f("pbkdf2", "safe", "unknown", { flags: ["hand-rolled-crypto"] }))).toBe("review");
   });
 });
 

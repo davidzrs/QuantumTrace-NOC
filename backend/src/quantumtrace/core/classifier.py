@@ -43,9 +43,15 @@ def normalise(name: str) -> str:
 
 
 class Classifier:
-    def __init__(self, rules: list[Rule], misuse: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        rules: list[Rule],
+        misuse: dict[str, str] | None = None,
+        review: dict[str, str] | None = None,
+    ) -> None:
         self.rules = rules
         self.misuse = misuse or {}
+        self.review = review or {}
         self._index: dict[str, Rule] = {}
         for rule in rules:
             for key in {normalise(rule.id), normalise(rule.name), *map(normalise, rule.aliases)}:
@@ -91,6 +97,8 @@ class Classifier:
         if misused := [self.misuse[f] for f in asset.flags if f in self.misuse]:
             classification.classically_broken = True
             classification.rationale = " ".join([classification.rationale, *misused])
+        if unreviewed := [self.review[f] for f in asset.flags if f in self.review]:
+            classification.rationale = " ".join([classification.rationale, *unreviewed])
         classification.hndl = exposed_to_hndl(
             classification.threat, classification.tier, asset.usage
         )
@@ -128,6 +136,11 @@ def load_misuse(data: dict[str, Any] | None = None) -> dict[str, str]:
     return {str(k): str(v) for k, v in (data or _rules_file()).get("misuse", {}).items()}
 
 
+def load_review(data: dict[str, Any] | None = None) -> dict[str, str]:
+    """Review flag -> what to check. These don't make a finding broken."""
+    return {str(k): str(v) for k, v in (data or _rules_file()).get("review", {}).items()}
+
+
 @lru_cache(maxsize=1)
 def default_classifier() -> Classifier:
-    return Classifier(load_rules(), load_misuse())
+    return Classifier(load_rules(), load_misuse(), load_review())

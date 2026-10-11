@@ -11,7 +11,7 @@ export const TIER: Record<RiskTier, { label: string; threat: string; color: stri
   },
   medium: {
     label: "Medium",
-    threat: "Weakened by Grover",
+    threat: "Grover-weakened or legacy",
     color: "var(--qt-medium)",
     wash: "var(--qt-medium-wash)",
     rgb: "242,180,65",

@@ -1,8 +1,8 @@
 import type { Finding, RiskTier, ScanResult } from "@quantumtrace/sdk";
 import type { jsPDF } from "jspdf";
-import { FIX_BY, fixRows, type FixBy, type FixRow } from "./fix";
+import { FIX_BY, fixBy, fixRows, type FixBy, type FixRow } from "./fix";
 import { algorithmLabel, placeLabel, plural, SOURCE_LABEL, SOURCES, usageLabel } from "./format";
-import { heroSub, NOTHING_FOUND, tally } from "./summary";
+import { heroSub, NOTHING_FOUND, SCORE_SCALE, tally } from "./summary";
 import { TIER, TIERS } from "./tiers";
 
 /**
@@ -44,6 +44,7 @@ const TIER_RGB: Record<RiskTier, Rgb> = {
 const FIX_RGB: Record<FixBy, Rgb> = {
   now: TIER_RGB.critical,
   "before-2030": TIER_RGB.critical,
+  "before-2035": TIER_RGB.critical,
   harden: TIER_RGB.medium,
   review: TIER_RGB.unknown,
   none: TIER_RGB.safe,
@@ -82,12 +83,20 @@ function reason(f: Finding): string {
   switch (c.tier) {
     case "critical":
       return (c.classically_broken ? "Already broken today, and Shor’s algorithm breaks it." : "Shor’s algorithm breaks it.") + harvest;
-    case "medium":
-      return c.classically_broken ? "Already broken today, and Grover’s algorithm weakens it further." : "Grover’s algorithm halves its strength.";
+    case "medium": {
+      const grover = c.threat === "grover";
+      if (c.classically_broken)
+        return grover
+          ? "Already broken today, and Grover’s algorithm weakens it further."
+          : "Already broken today, no quantum computer needed.";
+      if (grover) return "Grover’s algorithm halves its strength.";
+      if (c.primitive === "protocol") return "No post-quantum key exchange, so recorded sessions can be decrypted later.";
+      return c.rationale;
+    }
     case "unknown":
       return "No rule matches it yet, so check it by hand.";
     default:
-      return "";
+      return fixBy(f) === "review" ? "Home-made code: check it against the standard, or use the library’s own." : "";
   }
 }
 
@@ -200,7 +209,7 @@ function draw(doc: jsPDF, result: ScanResult, reportUrl: string): void {
     font(9, false, MUTED);
     doc.text(pdfText(`of 10 · grade ${result.score.grade}`), MARGIN + valueW + 2.5, base);
     y = base + 3;
-    para("0 is quantum-ready, 10 is every asset broken and exposed.", { size: 7.5, c: FAINT, width: 54 });
+    para(SCORE_SCALE, { size: 7.5, c: FAINT, width: 54 });
     const leftEnd = y;
 
     const x0 = MARGIN + 68;
@@ -348,7 +357,7 @@ function draw(doc: jsPDF, result: ScanResult, reportUrl: string): void {
     doc.setPage(i);
     rule(PAGE_H - 15);
     font(7.5, false, FAINT);
-    write(`QuantumTrace · scan ${result.id.slice(0, 8)} · classified against NIST FIPS 203, 204 and 205`, MARGIN, PAGE_H - 12.5);
+    write(`QuantumTrace · scan ${result.id.slice(0, 8)} · mapped to NIST FIPS 203, 204 and 205`, MARGIN, PAGE_H - 12.5);
     write(`Page ${i} of ${pages}`, PAGE_W - MARGIN, PAGE_H - 12.5, "right");
   }
 
