@@ -352,8 +352,12 @@ class Vault {{
     assert aes.asset.key_size is None  # the size isn't in the source
 
 
-def test_a_key_literal_is_still_a_hardcoded_key(tmp_path: Path) -> None:
-    code = 'EXPORT_KEY = b"0123456789abcdef"\n'
-    code += "from Crypto.Cipher import AES\nc = AES.new(EXPORT_KEY, AES.MODE_GCM)\n"
+@pytest.mark.parametrize("name", ["EXPORT_KEY", "FILE_ENCRYPTION_KEY", "HEADER_SIGNING_KEY"])
+def test_a_key_literal_is_still_a_hardcoded_key(tmp_path: Path, name: str) -> None:
+    # a word before "key" says what the key is for; only words after it point at a key
+    code = f'{name} = b"0123456789abcdef"\n'
+    code += "from cryptography.hazmat.primitives.ciphers.aead import AESGCM\n"
+    code += f"def seal(payload, nonce):\n    return AESGCM({name}).encrypt(nonce, payload, None)\n"
     [aes] = scan_source(tmp_path, "export.py", code).findings
     assert "hardcoded-key" in aes.asset.flags and aes.asset.key_size == 128
+    assert aes.classification.classically_broken

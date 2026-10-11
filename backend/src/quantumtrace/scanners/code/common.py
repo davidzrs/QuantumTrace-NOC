@@ -58,11 +58,14 @@ def is_secret_name(identifier: str) -> bool:
 
 
 def names_key_reference(identifier: str) -> bool:
-    """Whether the identifier holds something that points at a key (`KEY_ALIAS`, `keyIds`)
-    rather than the key itself (`EXPORT_KEY`)."""
-    words = (w.lower() for w in _NAME_WORD.findall(identifier))
+    """Whether the identifier holds something that points at a key rather than the key: a
+    reference word after the key word (`KEY_ALIAS`, `keyIds`, `CACHE_KEY_PREFIX`). Before it,
+    the word says what the key is for (`FILE_ENCRYPTION_KEY` is a key)."""
+    words = [w.lower() for w in _NAME_WORD.findall(identifier)]
+    last_key = max((i for i, w in enumerate(words) if "key" in w), default=len(words))
     return any(
-        w in KEY_REFERENCE_WORDS or w.removesuffix("s") in KEY_REFERENCE_WORDS for w in words
+        w in KEY_REFERENCE_WORDS or w.removesuffix("s") in KEY_REFERENCE_WORDS
+        for w in words[last_key + 1 :]
     )
 
 
