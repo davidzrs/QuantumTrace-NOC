@@ -1,5 +1,5 @@
 import type { RiskScore, RiskTier, ScanResult } from "@quantumtrace/sdk";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ExposurePanels } from "../components/ExposurePanels";
@@ -7,6 +7,8 @@ import { FindingsTable } from "../components/FindingsTable";
 import { TickStrip } from "../components/TickStrip";
 import { api } from "../lib/api";
 import { downloadJson, formatWhen, noteSource, plural, SOURCE_LABEL, SOURCES, type Source } from "../lib/format";
+import { exportPdf } from "../lib/pdf";
+import { heroSub, tally } from "../lib/summary";
 
 export function Report() {
   const { scanId = "" } = useParams();
@@ -48,14 +50,9 @@ function ReportBody({ result }: { result: ScanResult }) {
     [all, source],
   );
   const bySource = (s: Source) => all.filter((f) => f.asset.evidence.source_type === s).length;
-  const count = (t: RiskTier) => findings.filter((f) => f.classification.tier === t).length;
   const total = findings.length;
-  const [c, m, u, s] = [count("critical"), count("medium"), count("unknown"), count("safe")];
-  const internetCritical = findings.filter(
-    (f) => f.classification.tier === "critical" && f.asset.exposure === "internet",
-  ).length;
-  const hndl = findings.filter((f) => f.classification.hndl).length;
-  const internetHndl = findings.filter((f) => f.classification.hndl && f.asset.exposure === "internet").length;
+  const counts = tally(findings);
+  const c = counts.c;
   const notes = result.limitations.filter((n) => !source || (noteSource(n.scanner) ?? source) === source);
   const noCapture = bySource("network") === 0;
 
@@ -71,6 +68,8 @@ function ReportBody({ result }: { result: ScanResult }) {
   };
   const exportCbom = async () =>
     downloadJson(`quantumtrace-cbom-${result.id.slice(0, 8)}.cdx.json`, await api.getCbom(result.id));
+  // Always the whole scan, whichever source is picked above.
+  const pdf = useMutation({ mutationFn: () => exportPdf(result, `${window.location.origin}/scans/${result.id}`) });
 
   return (
     <main className="mx-auto grid max-w-[1240px] grid-cols-[minmax(0,1fr)] gap-10 px-4 pt-5 pb-20 sm:px-8">
@@ -120,6 +119,9 @@ function ReportBody({ result }: { result: ScanResult }) {
               >
                 Download report
               </button>
+              <button type="button" className="btn" onClick={() => pdf.mutate()} disabled={pdf.isPending}>
+                {pdf.isPending ? "Exporting…" : "Export PDF"}
+              </button>
               <button type="button" className="btn btn-primary" onClick={() => void exportCbom()}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M12 3v12" />
@@ -130,6 +132,11 @@ function ReportBody({ result }: { result: ScanResult }) {
               </button>
             </div>
           </div>
+          {pdf.isError && (
+            <p role="alert" className="justify-self-end border-l-2 border-critical pl-4 text-sm">
+              Couldn’t make the PDF. Check your connection, then try again.
+            </p>
+          )}
         </div>
 
         <section aria-labelledby="hero" className="flex flex-wrap items-end gap-x-12 gap-y-5">
@@ -159,7 +166,7 @@ function ReportBody({ result }: { result: ScanResult }) {
                   )}
                 </h1>
                 <p className="qt-fade max-w-[72ch] text-base leading-[1.5] text-pretty text-ink-muted">
-                  {heroSub({ c, m, u, s, internetCritical, hndl, internetHndl })}
+                  {heroSub(counts)}
                 </p>
               </>
             )}
@@ -222,31 +229,6 @@ function ReportBody({ result }: { result: ScanResult }) {
       )}
     </main>
   );
-}
-
-function heroSub({
-  c, m, u, s, internetCritical, hndl, internetHndl,
-}: Record<"c" | "m" | "u" | "s" | "internetCritical" | "hndl" | "internetHndl", number>): string {
-  const rest = [
-    m ? `${m} ${c ? "more " : ""}${m === 1 ? "is" : "are"} medium, weakened by Grover’s` : "",
-    u ? `${u} ${u === 1 ? "is" : "are"} unclassified` : "",
-    s ? `${s} ${s === 1 ? "is" : "are"} safe` : "",
-  ].filter(Boolean);
-  const list = rest.length > 1 ? `${rest.slice(0, -1).join(", ")} and ${rest.at(-1)}` : (rest[0] ?? "");
-  const lead = c ? "Shor’s algorithm breaks them outright." : "";
-  const harvest = hndl
-    ? `${hndl} of them ${hndl === 1 ? "is a key exchange or encryption" : "are key exchanges or encryption"}, exposed to harvest-now, decrypt-later.`
-    : "";
-  // only key exchanges and encryption are harvested; a signature has to be forged live
-  const harvested = internetHndl
-    ? `, ${internetHndl} of them key exchanges or encryption whose traffic can be recorded today and decrypted later`
-    : "";
-  const exposure = c
-    ? internetCritical
-      ? `${internetCritical} of the critical ones sit on internet-facing endpoints${harvested}.`
-      : "None of them faces the internet directly."
-    : "";
-  return [lead, harvest, list && `${list.charAt(0).toUpperCase()}${list.slice(1)}.`, exposure].filter(Boolean).join(" ");
 }
 
 function ScorePanel({ score, scope }: { score: RiskScore; scope: string }) {
