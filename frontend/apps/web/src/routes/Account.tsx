@@ -1,7 +1,11 @@
-import { useQueryClient } from "@tanstack/react-query";
+import type { ScanSummary } from "@quantumtrace/sdk";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { signIn, signOut, useAccount } from "../lib/account";
+import { ScanTable } from "../components/ScanTable";
+import { accountScanIds, signIn, signOut, useAccount } from "../lib/account";
+import { api } from "../lib/api";
+import { plural } from "../lib/format";
 import { MIN_PASSWORD, usernameProblem } from "../lib/username";
 
 /**
@@ -10,10 +14,11 @@ import { MIN_PASSWORD, usernameProblem } from "../lib/username";
  */
 export function Account() {
   const account = useAccount();
+  if (account.status === "signed-in") return <SignedIn uid={account.uid} username={account.username} />;
   return (
     <main className="mx-auto grid max-w-[640px] grid-cols-[minmax(0,1fr)] gap-6 px-4 pt-12 pb-16 sm:px-8">
       <div className="grid gap-2">
-        <h1 className="font-display text-[32px] leading-tight font-bold tracking-[-0.02em]">Account</h1>
+        <h1 className={title}>Account</h1>
         <p className="text-ink-muted">
           Optional. An account keeps your scan history in one place, so you can open your reports from any
           computer. Scanning, reports and exports work the same without one.
@@ -23,8 +28,6 @@ export function Account() {
         <p className="text-ink-muted">Accounts aren’t set up on this deployment.</p>
       ) : account.status === "checking" ? (
         <p aria-live="polite" className="text-ink-muted">Checking your account…</p>
-      ) : account.status === "signed-in" ? (
-        <SignedIn username={account.username} />
       ) : (
         <SignInForm />
       )}
@@ -32,6 +35,7 @@ export function Account() {
   );
 }
 
+const title = "font-display text-[32px] leading-tight font-bold tracking-[-0.02em]";
 const panel = "grid gap-4 rounded-xl border border-rule bg-surface p-5 sm:px-6";
 const field =
   "min-h-[38px] w-full rounded-lg border border-rule-strong bg-transparent px-3.5 text-[15px] outline-none placeholder:text-ink-faint focus:border-ink disabled:opacity-60";
@@ -125,16 +129,28 @@ function SignInForm() {
   );
 }
 
-function SignedIn({ username }: { username: string }) {
+/** Signed in: the account's own scans, the same on every computer, and a way out. */
+function SignedIn({ uid, username }: { uid: string; username: string }) {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Only what's saved to the account, not this browser's history: this is what follows you around.
+  const scans = useQuery({
+    queryKey: ["scans", "account", uid],
+    queryFn: async () => {
+      const ids = await accountScanIds();
+      if (!ids.length) return [];
+      const found = await api.listScans(ids);
+      return found.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    },
+  });
 
   async function leave() {
     setBusy(true);
     setError(null);
     try {
       await signOut();
+      queryClient.removeQueries({ queryKey: ["scans", "account"] });
       void queryClient.invalidateQueries({ queryKey: ["scans"] });
     } catch {
       setError("Couldn’t sign out. Check your connection and try again.");
@@ -144,28 +160,72 @@ function SignedIn({ username }: { username: string }) {
   }
 
   return (
-    <div className={panel}>
-      <p className="text-[17px]">
-        Signed in as <strong>{username}</strong>.
-      </p>
-      <p className="text-ink-muted">
-        Scans you run while signed in, and the ones already in this browser, are saved to your account. Sign in on
-        another computer to see them there. Reports are kept for 30 days after they run. Signing out leaves this
-        browser’s own scans listed.
-      </p>
-      {error && (
-        <p role="alert" className="border-l-2 border-critical pl-4 text-[15px]">
-          {error}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-3">
-        <Link to="/" className="btn btn-primary">
-          Back to scanning
-        </Link>
-        <button type="button" className="btn" onClick={() => void leave()} disabled={busy}>
-          {busy ? "Signing out…" : "Sign out"}
-        </button>
+    <main className="mx-auto grid max-w-[1240px] grid-cols-[minmax(0,1fr)] gap-10 px-4 pt-12 pb-16 sm:px-8">
+      <div className="grid gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="grid gap-2">
+            <h1 className={title}>Account</h1>
+            <p className="max-w-[68ch] text-ink-muted">
+              Signed in as <strong className="text-ink">{username}</strong>. Scans you run while signed in, and the
+              ones already in this browser, are saved here, so they follow you to any computer you sign in from.
+              Signing out leaves this browser’s own scans listed.
+            </p>
+          </div>
+          <button type="button" className="btn" onClick={() => void leave()} disabled={busy}>
+            {busy ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
+        {error && (
+          <p role="alert" className="border-l-2 border-critical pl-4 text-[15px]">
+            {error}
+          </p>
+        )}
       </div>
-    </div>
+
+      <section aria-labelledby="account-history-title" className="grid grid-cols-[minmax(0,1fr)] gap-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="account-history-title" className="font-display text-[22px] font-bold tracking-[-0.02em]">
+            Scan history
+          </h2>
+          <span className="text-sm text-ink-faint">Reports are kept for 30 days after they run</span>
+        </div>
+        {scans.isPending ? (
+          <p aria-live="polite" className="text-ink-muted">Loading your scans…</p>
+        ) : scans.isError ? (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            <p role="alert" className="border-l-2 border-critical pl-4">
+              Couldn’t load your scans. Check your connection and that the scanner is online, then try again.
+            </p>
+            <button type="button" className="btn" onClick={() => void scans.refetch()} disabled={scans.isFetching}>
+              Try again
+            </button>
+          </div>
+        ) : scans.data.length ? (
+          <>
+            <p className="text-[17px]">{historySentence(scans.data)}</p>
+            <ScanTable scans={scans.data} />
+          </>
+        ) : (
+          <div className="grid justify-items-start gap-4">
+            <p className="text-ink-muted">
+              Nothing saved yet. Scans you run while signed in show up here, on any computer.
+            </p>
+            <Link to="/" className="btn btn-primary">
+              Run a scan
+            </Link>
+          </div>
+        )}
+      </section>
+    </main>
   );
+}
+
+/** "6 scans saved. 4 of them found cryptography that breaks under Shor’s algorithm." */
+function historySentence(scans: ScanSummary[]): string {
+  const saved = `${plural(scans.length, "scan")} saved.`;
+  const shor = scans.filter((s) => s.score.counts.critical > 0).length;
+  const one = scans.length === 1;
+  if (!shor) return `${saved} ${one ? "It didn’t find" : "None of them found"} cryptography that breaks under Shor’s algorithm.`;
+  const who = one ? "It" : shor === scans.length ? "All of them" : `${shor} of them`;
+  return `${saved} ${who} found cryptography that breaks under Shor’s algorithm.`;
 }
