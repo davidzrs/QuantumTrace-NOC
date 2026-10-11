@@ -1,4 +1,6 @@
-"""Python: hashlib/hmac, pyca/cryptography (hazmat), PyCryptodome, stdlib `random` misuse."""
+"""Python: hashlib/hmac, pyca/cryptography (hazmat), PyCryptodome, stdlib `random` misuse,
+`ssl` settings and JWT algorithms. Imported names are resolved, so `import hashlib as hl` and
+`from hashlib import sha1` are read like `hashlib.sha1`."""
 
 from __future__ import annotations
 
@@ -6,6 +8,15 @@ import re
 
 from quantumtrace.core.models import Confidence
 from quantumtrace.scanners.code.common import SourceFile
+from quantumtrace.scanners.code.imports import python_imports
+from quantumtrace.scanners.code.protocol_rules import (
+    call_arguments,
+    emit_jws,
+    emit_tls_suites,
+    emit_tls_version,
+    string_literals,
+    suite_names,
+)
 
 HASH_NAMES = {
     "md5": "MD5", "sha1": "SHA-1", "sha224": "SHA-224", "sha256": "SHA-256",
@@ -21,6 +32,7 @@ CIPHERS = {
     "DES": "DES", "Blowfish": "Blowfish", "ARC4": "RC4", "ChaCha20": "ChaCha20",
 }  # fmt: skip
 CURVE_BITS = {"SECP256R1": 256, "SECP384R1": 384, "SECP521R1": 521, "SECP256K1": 256}
+WEAK_RANDOM = ("getrandbits", "randint", "randbytes", "random", "choice", "choices")
 KDFS = {
     "PBKDF2HMAC": "PBKDF2", "Scrypt": "scrypt", "HKDF": "HKDF", "HKDFExpand": "HKDF",
     "Argon2id": "Argon2",
@@ -32,13 +44,19 @@ def scan(src: SourceFile) -> None:
     aes_bits, hardcoded = src.symmetric_key_hint()
     key_flags = ["hardcoded-key"] if hardcoded else []
 
-    for m in re.finditer(r"\bhashlib\.(\w+)\s*\(", text):
+    imports = python_imports(text)
+    hashlib_ = _names(imports, "hashlib")  # `hashlib`, or what `import hashlib as hl` binds
+    for m in re.finditer(rf"\b(?:{hashlib_})\.(\w+)\s*\(", text):
         if name := HASH_NAMES.get(m.group(1).lower()):
             src.emit(m.start(), m.group(0).rstrip("( "), name, "hash")
-    for m in re.finditer(r"\bhashlib\.new\(\s*[\"'](\w+)[\"']", text):
+    for m in re.finditer(rf"\b(?:{hashlib_})\.new\(\s*[\"'](\w+)[\"']", text):
         if name := HASH_NAMES.get(m.group(1).lower()):
             src.emit(m.start(), m.group(0), name, "hash")
-    for m in re.finditer(r"\bhmac\.new\([^)]*?(?:hashlib\.(\w+)|[\"'](\w+)[\"'])", text):
+    for bound, leaf in _members(imports, "hashlib"):  # from hashlib import sha1 [as h]
+        if name := HASH_NAMES.get(leaf.lower()):
+            for m in re.finditer(rf"\b{re.escape(bound)}\s*\(", text):
+                src.emit(m.start(), bound, name, "hash")
+    for m in re.finditer(rf"\bhmac\.new\([^)]*?(?:(?:{hashlib_})\.(\w+)|[\"'](\w+)[\"'])", text):
         if name := HMAC_NAMES.get((m.group(1) or m.group(2)).lower()):
             src.emit(m.start(), m.group(0), name, "mac")
 
@@ -127,10 +145,16 @@ def scan(src: SourceFile) -> None:
         src.emit(m.start(), "bcrypt.hashpw", "bcrypt", "kdf")
 
     if re.search(r"^\s*(?:import random\b|from random import)", text, re.M):
-        for m in re.finditer(
-            r"\brandom\.(getrandbits|randint|randbytes|random|choice|choices)\s*\(", text
-        ):
+        weak = "|".join(WEAK_RANDOM)
+        for m in re.finditer(rf"\b(?:{_names(imports, 'random')})\.({weak})\s*\(", text):
             src.emit_weak_rng(m.start(), m.group(0).rstrip("( "))
+        for bound, leaf in _members(imports, "random"):  # from random import choice [as c]
+            if leaf in WEAK_RANDOM:
+                for m in re.finditer(rf"\b{re.escape(bound)}\s*\(", text):
+                    src.emit_weak_rng(m.start(), bound)
+
+    _tls(src, imports)
+    _jwt(src, imports)
 
 
 def _cipher(
@@ -178,3 +202,52 @@ def _edwards_key(text: str, receiver: str, families: list[str]) -> tuple[str, Co
     if len(set(families)) == 1:
         return families[0], Confidence.MEDIUM
     return "EdDSA", Confidence.LOW
+
+
+def _names(imports: dict[str, str], module: str) -> str:
+    """Regex alternation of the names a module is called by: its own and any `import ... as`."""
+    return "|".join(re.escape(n) for n in {module, *(k for k, v in imports.items() if v == module)})
+
+
+def _members(imports: dict[str, str], module: str) -> list[tuple[str, str]]:
+    """(bound name, member) for each `from module import member [as bound]`."""
+    prefix = module + "."
+    return [(k, v.removeprefix(prefix)) for k, v in imports.items() if v.startswith(prefix)]
+
+
+def _tls(src: SourceFile, imports: dict[str, str]) -> None:
+    """TLS versions and cipher suites pinned with the `ssl` module."""
+    text = src.text
+    ssl_ = _names(imports, "ssl")
+    tls_version = "|".join(
+        [
+            *(f"{n}\\.TLSVersion" for n in ssl_.split("|")),
+            *(re.escape(k) for k, v in imports.items() if v == "ssl.TLSVersion"),
+        ]
+    )
+    for m in re.finditer(rf"\b(?:(?:{ssl_})\.PROTOCOL_|(?:{tls_version})\.)"
+                         rf"(TLSv1_1|TLSv1_2|TLSv1|SSLv3)\b", text):  # fmt: skip
+        emit_tls_version(src, m.start(), m.group(0), m.group(1))
+    if not any(v == "ssl" or v.startswith("ssl.") for v in imports.values()):
+        return
+    for m in re.finditer(r"\b[A-Za-z_][\w.]*\.set_ciphers\(", text):
+        for literal in string_literals(call_arguments(text, m.end() - 1)):
+            emit_tls_suites(src, m.start(), m.group(0).rstrip("("), suite_names(literal))
+
+
+def _jwt(src: SourceFile, imports: dict[str, str]) -> None:
+    """PyJWT, python-jose and authlib: `jwt.encode(..., algorithm="RS256")`, the `algorithms`
+    accepted by `jwt.decode`, or an `"alg"` header. PyJWT and python-jose default to HS256."""
+    text = src.text
+    jwt_ = "|".join({"jwt", *(re.escape(k) for k, v in imports.items() if v.endswith("jwt"))})
+    for m in re.finditer(rf"\b(?:{jwt_})\.(encode|decode)\(", text):
+        args = call_arguments(text, m.end() - 1)
+        names = re.findall(r"\balgorithm\s*=\s*[\"'](\w+)[\"']", args)
+        names += re.findall(r"[\"']alg[\"']\s*:\s*[\"'](\w+)[\"']", args)
+        for listed in re.findall(r"\balgorithms\s*=\s*\[([^\]]*)\]", args):
+            names += string_literals(listed)
+        observed = m.group(0).rstrip("(")
+        for name in names:
+            emit_jws(src, m.start(), observed, name)
+        if not names and m.group(1) == "encode":
+            emit_jws(src, m.start(), observed, "HS256", confidence=Confidence.MEDIUM)

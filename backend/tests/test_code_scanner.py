@@ -444,6 +444,42 @@ def test_a_key_literal_is_still_a_hardcoded_key(tmp_path: Path, name: str) -> No
     assert aes.classification.classically_broken
 
 
+def test_hand_rolled_pbkdf2_with_its_hmac_made_before_the_loops(tmp_path: Path) -> None:
+    # the HMAC is made once and reset in each iteration: still the PBKDF2's PRF
+    code = """package kdf
+
+import (
+\t"crypto/hmac"
+\t"crypto/sha256"
+)
+
+func PasswordKey(password, salt []byte, iter int) []byte {
+\tprf := hmac.New(sha256.New, password)
+\tvar out []byte
+\tfor block := 1; block <= 1; block++ {
+\t\tprf.Reset()
+\t\tprf.Write(salt)
+\t\tu := prf.Sum(nil)
+\t\tt := append([]byte{}, u...)
+\t\tfor i := 1; i < iter; i++ {
+\t\t\tprf.Reset()
+\t\t\tprf.Write(u)
+\t\t\tu = prf.Sum(u[:0])
+\t\t\tfor j := range t {
+\t\t\t\tt[j] ^= u[j]
+\t\t\t}
+\t\t}
+\t\tout = append(out, t...)
+\t}
+\treturn out
+}
+"""
+    findings = scan_source(tmp_path, "password.go", code).findings
+    assert {(f.classification.name, f.asset.usage) for f in findings} == {("PBKDF2", "kdf")}
+    [kdf] = findings
+    assert kdf.asset.variant == "PBKDF2-HMAC-SHA256 (hand-rolled)"
+
+
 def test_a_mac_after_a_hand_rolled_pbkdf2_is_still_its_own_finding(tmp_path: Path) -> None:
     # only the HMACs in the iteration loops are the PBKDF2's PRF
     code = """package auth
@@ -510,3 +546,112 @@ def sign_partner(payload):
         f.asset.evidence.line: f.asset.variant for f in findings if f.asset.usage == "signature"
     }
     assert signed == {7: "Ed25519", 10: "Ed448"}  # line 10 also has a trailing comma
+
+
+# --- imported names, TLS settings and JWT algorithms -------------------------------------
+def names(result: ScanResult) -> set[tuple[str, str]]:
+    return {(f.classification.name, f.asset.usage or "") for f in result.findings}
+
+
+def test_python_weak_rng_through_an_alias_or_a_from_import(tmp_path: Path) -> None:
+    code = """import random as rnd
+from random import randint, SystemRandom
+
+def pick(xs):
+    return rnd.choice(xs)
+
+def roll():
+    return randint(1, 6)
+
+def token(alphabet):
+    return SystemRandom().choice(alphabet)
+"""
+    rng = [f for f in scan_source(tmp_path, "r.py", code).findings if f.asset.usage == "rng"]
+    assert sorted(e.line or 0 for f in rng for e in f.asset.all_evidence) == [5, 8]
+
+
+def test_go_rand_is_weak_only_where_it_names_math_rand(tmp_path: Path) -> None:
+    code = """package session
+
+import (
+\t"crypto/rand"
+\tmrand "math/rand"
+)
+
+func Key() []byte {
+\tkey := make([]byte, 32)
+\trand.Read(key)
+\treturn key
+}
+
+func ID() int64 { return mrand.Int63() }
+"""
+    [rng] = [f for f in scan_source(tmp_path, "s.go", code).findings if f.asset.usage == "rng"]
+    assert rng.asset.evidence.line == 14  # mrand.Int63, not crypto/rand's Read
+
+
+def test_python_tls_version_set_and_cipher_keywords_skipped(tmp_path: Path) -> None:
+    code = """import ssl
+
+def context():
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_1
+    ctx.set_ciphers("HIGH:!aNULL:!MD5")
+    return ctx
+"""
+    assert names(scan_source(tmp_path, "c.py", code)) == {("TLS 1.1", "tls-protocol")}
+
+
+def test_java_tls_versions_and_suites_set_in_code(tmp_path: Path) -> None:
+    code = """class Partner {
+    javax.net.ssl.SSLContext context() throws Exception {
+        return javax.net.ssl.SSLContext.getInstance("TLSv1.1");
+    }
+    void harden(javax.net.ssl.SSLSocket socket) {
+        socket.setEnabledProtocols(new String[] {"TLSv1", "TLSv1.2"});
+        socket.setEnabledCipherSuites(new String[] {"TLS_RSA_WITH_3DES_EDE_CBC_SHA"});
+    }
+}
+"""
+    found = names(scan_source(tmp_path, "Partner.java", code))
+    assert {("TLS 1.0", "tls-protocol"), ("TLS 1.1", "tls-protocol"), ("TLS 1.2", "tls-protocol"),
+            ("3DES", "tls-cipher"), ("RSA", "tls-key-exchange")} <= found  # fmt: skip
+
+
+def test_go_cipher_suites_in_a_tls_config(tmp_path: Path) -> None:
+    code = """package srv
+
+import "crypto/tls"
+
+var Config = &tls.Config{
+\tMinVersion:   tls.VersionTLS13,
+\tCipherSuites: []uint16{tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA},
+}
+"""
+    found = names(scan_source(tmp_path, "srv.go", code))
+    assert {("3DES", "tls-cipher"), ("RSA", "tls-key-exchange")} <= found
+    assert not any(usage == "tls-protocol" for _, usage in found)  # TLS 1.3 names no weak version
+
+
+@pytest.mark.parametrize(
+    ("name", "code", "expected"),
+    [
+        ("es.py", 'import jwt\njwt.encode(c, k, algorithm="ES256")\n', ("ECDSA", "ECDSA P-256")),
+        ("dec.py", 'import jwt\njwt.decode(t, k, algorithms=["RS256"])\n', ("RSA", None)),
+        ("Auth.java", "class A { Object a = io.jsonwebtoken.SignatureAlgorithm.RS512; }\n",
+         ("RSA", None)),
+        ("auth.go", 'package a\n\nimport "github.com/golang-jwt/jwt/v5"\n\n'
+         "var M = jwt.SigningMethodHS384\n", ("HMAC-SHA384", None)),
+    ],
+)  # fmt: skip
+def test_jwt_algorithms_in_every_language(
+    tmp_path: Path, name: str, code: str, expected: tuple[str, str | None]
+) -> None:
+    [f] = scan_source(tmp_path, name, code).findings
+    assert (f.classification.name, f.asset.variant) == expected
+
+
+def test_pyjwt_defaults_to_hs256_when_no_algorithm_is_named(tmp_path: Path) -> None:
+    [f] = scan_source(tmp_path, "t.py", "import jwt\njwt.encode(claims, secret)\n").findings
+    assert f.classification.name == "HMAC-SHA256"
+    assert f.asset.confidence is Confidence.MEDIUM  # the library's default, not written here
