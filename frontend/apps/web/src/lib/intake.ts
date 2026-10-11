@@ -11,7 +11,7 @@ export const KINDS: { id: Kind; label: string; hint: string }[] = [
   {
     id: "code",
     label: "Source code",
-    hint: "Python, Java and Go, plus dependency manifests, SSH and TLS configs, certificates and keys, and Java builds",
+    hint: "Python, Java and Go, plus SSH and TLS configs, certificates and keys, and Java builds",
   },
   { id: "cloud", label: "Cloud exports", hint: "JSON from AWS KMS, ACM and load balancers" },
   { id: "capture", label: "Packet captures", hint: "TLS and SSH handshakes" },
@@ -52,16 +52,14 @@ export const ACCEPTED_FILES: { label: string; files: string[] }[] = [
   { label: "Cloud exports", files: [".json"] },
   { label: "Source code", files: [".py", ".java", ".go"] },
   { label: "Packet captures", files: [".pcap", ".pcapng"] },
-  { label: "Dependency manifests", files: ["requirements.txt", "pyproject.toml", "go.mod", "pom.xml", "package.json"] },
   { label: "Server configs", files: ["sshd_config", ".conf"] },
   { label: "Certificates and keys", files: [".pem", ".crt", ".der", ".csr", ".key", ".pub", ".p12"] },
   { label: "Java builds", files: [".jar", ".class"] },
   { label: "Archives", files: [".zip"] },
 ];
 
-/** Files a scanner knows by name: dependency manifests and OpenSSH files. */
-const SCANNED_NAMES =
-  /^(requirements[\w.-]*\.txt|pyproject\.toml|go\.mod|pom\.xml|package\.json|sshd_config|ssh_config|authorized_keys2?|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|ssh_host_\w+_key(\.pub)?)$/;
+/** Files a scanner knows by name: OpenSSH configs and keys. */
+const SCANNED_NAMES = /^(sshd_config|ssh_config|authorized_keys2?|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|ssh_host_\w+_key(\.pub)?)$/;
 
 /** Source files: the source scanner skips any over MAX_CODE_BYTES. */
 const SOURCE_EXTS = new Set([".py", ".java", ".go"]);
@@ -73,8 +71,11 @@ export const IGNORED_DIRS = new Set([
   "dist", "build", "target", "out",
 ]);
 
-/** Generated files that look like cloud exports but never are. */
-const IGNORED_FILES = new Set(["package-lock.json", "composer.lock", "yarn.lock", "pnpm-lock.yaml"]);
+/** JSON that looks like a cloud export but never is: dependency lists and lockfiles name
+ * packages, not the cryptography they run, so no scanner finds anything in them. */
+const IGNORED_FILES = new Set([
+  "package.json", "package-lock.json", "composer.json", "composer.lock", "yarn.lock", "pnpm-lock.yaml",
+]);
 
 /** The source scanner skips files above this size, so don't spend upload budget on them. */
 export const MAX_CODE_BYTES = 2 * 1024 * 1024;

@@ -76,11 +76,12 @@ def test_cbom_lists_libraries_and_what_they_provide(samples: Path, personal_samp
     assert JsonStrictValidator(SchemaVersion.V1_6).validate_str(json.dumps(bom)) is None
 
     libraries = {c["name"]: c for c in bom["components"] if c["type"] == "library"}
-    crypto = libraries["cryptography"]
-    assert crypto["version"] == "46.0.5" and crypto["purl"] == "pkg:pypi/cryptography@46.0.5"
-    (declared,) = crypto["evidence"]["occurrences"]
-    assert declared["location"].endswith("requirements.txt") and declared["line"] == 1
-    assert libraries["org.bouncycastle:bcprov-jdk18on"]["version"] == "1.78.1"
+    crypto = libraries["cryptography"]  # the code imports it; nothing in the inputs pins a version
+    assert crypto["purl"] == "pkg:pypi/cryptography" and "version" not in crypto
+    assert "evidence" not in crypto
+    bundled = libraries["org.bouncycastle:bcprov-jdk18on"]  # the jar's pom.properties pins it
+    assert bundled["version"] == "1.78.1"
+    assert bundled["evidence"]["occurrences"][0]["location"].endswith("/pom.properties")
     assert "Java Cryptography Architecture (JDK)" in libraries
 
     refs = {c["bom-ref"] for c in bom["components"]}

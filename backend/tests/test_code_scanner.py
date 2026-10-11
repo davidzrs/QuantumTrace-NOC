@@ -31,8 +31,7 @@ def tiers(findings: list[Finding]) -> set[tuple[str, str]]:
 
 def test_whole_repo_has_no_unknowns_or_errors(result: ScanResult) -> None:
     assert result.errors == []
-    # the repos' requirements.txt and go.mod are read for their libraries; nothing else misfires
-    assert result.scanners == ["source-code", "dependency-manifest"]
+    assert result.scanners == ["source-code"]  # requirements.txt and go.mod are left alone
     assert result.score.counts.unknown == 0
 
 
