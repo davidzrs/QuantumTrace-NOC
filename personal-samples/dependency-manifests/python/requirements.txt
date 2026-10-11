@@ -1,4 +1,0 @@
-# Fixture for tests/test_dependency_scanner.py: crypto libraries to find, others to ignore.
-pycrypto==2.6.1
-PyJWT[crypto]>=2.8,<3
-requests==2.32.3
