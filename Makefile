@@ -1,5 +1,5 @@
 # QuantumTrace task runner: bridges uv (backend) and pnpm (frontend).
-.PHONY: install dev api web test lint format gen-sdk scan demo docker-build
+.PHONY: install dev api web test lint format gen-sdk scan report demo docker-build
 
 install:            ## Install backend + frontend dependencies and the git hooks
 	cd backend && uv sync
@@ -32,6 +32,10 @@ gen-sdk:            ## Regenerate OpenAPI spec + TypeScript SDK types after API 
 
 scan:               ## Scan all challenge samples in the terminal
 	cd backend && uv run quantumtrace scan ../samples
+
+IN ?= samples
+report:             ## Offline report folder in outputs/ (PDF, JSON, CBOM): make report IN=samples
+	cd backend && uv run quantumtrace report ../$(IN) --out ../outputs
 
 demo:               ## Full stack in Docker (api :8000, web :8080)
 	docker compose up --build

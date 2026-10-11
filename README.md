@@ -33,6 +33,7 @@ cd backend
 uv run quantumtrace scan ../samples/cloud-posture                      # table
 uv run quantumtrace scan ../samples -f cbom -o quantumtrace.cdx.json   # CycloneDX 1.6
 uv run quantumtrace scan ./my-repo --fail-on critical                  # CI gate
+uv run quantumtrace report ../samples --out ../outputs                 # offline: PDF summary, report.json, CBOM
 uv run quantumtrace probe github.com                                   # live TLS handshake
 uv run quantumtrace trace --root ./my-repo -- python -m pytest         # what the tests really run
 uv run quantumtrace scan ./my-repo                                     # ...then read the trace
