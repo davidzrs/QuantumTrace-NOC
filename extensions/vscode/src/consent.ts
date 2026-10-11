@@ -15,10 +15,14 @@ export function originOf(apiUrl: string): string {
 }
 
 export class ApiConsent {
-  constructor(private readonly store: Store) {}
+  /** `key` keeps different questions apart: scanning through an API, having its AI write fixes. */
+  constructor(
+    private readonly store: Store,
+    private readonly key = STATE_KEY,
+  ) {}
 
   private get answers(): Record<string, Answer> {
-    return this.store.get<Record<string, Answer>>(STATE_KEY, {});
+    return this.store.get<Record<string, Answer>>(this.key, {});
   }
 
   /** True or false once the user has answered for this API; undefined while they have not. */
@@ -28,7 +32,7 @@ export class ApiConsent {
   }
 
   record(apiUrl: string, granted: boolean): PromiseLike<void> {
-    return this.store.update(STATE_KEY, {
+    return this.store.update(this.key, {
       ...this.answers,
       [originOf(apiUrl)]: granted ? "granted" : "declined",
     });

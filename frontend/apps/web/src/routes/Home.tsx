@@ -159,7 +159,9 @@ export function Home() {
               </h2>
               <p className="max-w-[68ch] text-ink-muted">
                 The VS Code extension highlights the lines of Python, Java and Go that a quantum
-                computer breaks or weakens, and says what to switch to. Open the Extensions view, pick
+                computer breaks or weakens, and says what to switch to. “Fix with AI” has this
+                scanner’s model rewrite a flagged line in the editor, for you to review; it asks before
+                sending the file. Open the Extensions view, pick
                 “Install from VSIX…” in its <span className="font-mono text-sm text-ink">...</span> menu
                 and choose the file. It runs the QuantumTrace CLI on your machine; without one, it asks
                 before sending any file to this scanner.

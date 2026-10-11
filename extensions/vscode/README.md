@@ -12,8 +12,18 @@ It is a thin client. Every tier, rationale and replacement comes from the engine
   highlighted in yellow, lines with Shor-vulnerable code (`critical`) in red. A line with both is
   red. Resilient algorithms are not marked. A few words after the code say what is wrong, for
   example "RSA-1024: broken by Shor's algorithm".
+- Keeps up while you edit. With the local CLI the file is scanned again a moment after you stop
+  typing, saved or not, so new code is marked and fixed code is cleared without a save. Undo and
+  redo bring back the marks the text had, at once, whichever backend is used.
 - Click a highlighted line, or hover it, for the explanation: the engine's rationale, the NIST
   replacement, the reference and any misuse flags such as `ecb-mode`.
+- **Fix with AI** in that pop-up, or under Quick Fix, has the QuantumTrace API's model rewrite
+  the lines around the finding and puts the rewrite in the editor. It asks first, because the
+  file goes to the API and those lines on to Google's Gemini; **Always send to this API** stops
+  the question for that API. Nothing is saved: review the change, or **Undo** it from the
+  notification or with Ctrl+Z, and the mark is back. What the rewrite cannot do on those lines (an import, a
+  library to install, callers to update) is listed under **Show what else to change**. The key
+  for the model stays on the API; the extension never holds it.
 - **Dismiss warning** in that pop-up, or under Quick Fix, hides one finding. Dismissals are kept
   per workspace and listed under **Dismissed warnings** in the QuantumTrace side bar: click one to
   open its line, or restore it from there. **QuantumTrace: Restore dismissed warnings** brings
@@ -39,10 +49,12 @@ it may scan through the API that web app uses, and names the address your files 
 | `quantumtrace.cli.command` | `["quantumtrace"]` | Command that starts the CLI, one item per argument. Use absolute paths. |
 | `quantumtrace.api.url` | empty | Base URL of the API, for example `http://localhost:8000`. Empty uses the API the package was built for, if any. Store a key with **QuantumTrace: Set API key**. |
 | `quantumtrace.scanOnSave` | `true` | Scan on open and on save. Turn off to scan only on command. |
+| `quantumtrace.scanOnType` | `true` | Scan again a moment after you stop typing, without saving. Local CLI only: unsaved text is never uploaded. |
 | `quantumtrace.style` | `highlight` | `highlight` colours the whole line. `underline` underlines the call and fills the Problems panel. |
 | `quantumtrace.criticalSeverity` | `error` | Set to `warning` to show Shor-vulnerable code in yellow too. |
 | `quantumtrace.explainOnClick` | `true` | Open the explanation on click, not only on hover. |
 | `quantumtrace.inlineHint` | `true` | Show the few words after each marked line. |
+| `quantumtrace.aiFix` | `true` | Offer **Fix with AI**. It needs an API: `quantumtrace.api.url`, or the one the package was built for. Turn off to never offer sending code to the model. |
 
 The highlight colours follow the QuantumTrace palette (`frontend/packages/ui/src/tokens.css`): crimson for
 Shor, ochre for Grover. Override them under `workbench.colorCustomizations` with
@@ -82,7 +94,15 @@ CLI with an absolute path, for example:
   with tests next to it (`pnpm -F quantumtrace-vscode test`).
 - The engine reports a line per finding, not a column. In the `underline` style the underline
   covers the observed call when it appears on that line verbatim, otherwise the whole line.
-- The engine reads files from disk, so unsaved edits are scanned on the next save. Until then
-  the marks follow the text as you type.
+- The engine reads files, so to scan unsaved edits the CLI is given a copy of the editor's text
+  in the temporary folder, deleted right after (`cliEngine.scanText`). The API is never sent
+  unsaved text: there the marks follow the text as you type and are refreshed on save.
+- `src/history.ts` remembers the marks of each text a file has read as since its last scans, so
+  an undo or redo restores them without the engine.
+- **Fix with AI** uploads the file as it reads in the editor, saved or not, asks
+  `POST /scans/{id}/findings/{fid}/fix` for the matching finding and deletes that scan again
+  (`src/fix.ts`). The engine merges repeats of the same code in a file into one finding and the
+  API fixes its first place, so on a later place the extension offers to fix the first one. A
+  rewrite is applied only when the lines still read as the API saw them.
 - Only source-code findings are shown. Cloud exports and packet captures in the workspace are
   scanned by the engine but have no editor lines to mark.

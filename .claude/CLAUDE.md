@@ -41,7 +41,7 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | `frontend/packages/sdk/` | generated OpenAPI types + typed client |
 | `frontend/packages/ui/` | `TierBadge`, `DebtStrip`, design tokens, shared with extension popups |
 | `extensions/browser/` | WXT popup (Chrome MV3 + Firefox) over `POST /api/v1/probes/tls` |
-| `extensions/vscode/` | VS Code extension (`quantumtrace-vscode`): highlights code findings, explains and dismisses them, via the CLI or the API |
+| `extensions/vscode/` | VS Code extension (`quantumtrace-vscode`): highlights code findings, explains and dismisses them, via the CLI or the API; "Fix with AI" applies the API's `/fix` rewrite in the editor |
 | `samples/` | organiser data (READMEs in Portuguese). Read-only: never edit to make a test pass |
 
 ## Commands

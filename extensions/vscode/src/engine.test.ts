@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -60,6 +61,43 @@ describe("cliEngine", () => {
   it("rejects an empty command", async () => {
     await expect(cliEngine([]).scan([root], root)).rejects.toThrow(/cli\.command is empty/);
   });
+
+  describe("scanText", () => {
+    // reports the file it was given: its text, its name and where it was, with one finding in it
+    const reader = `
+      const fs = require("node:fs"), path = require("node:path");
+      const file = process.argv.at(-1);
+      const place = { source_type: "code", location: file, line: 1 };
+      console.log(JSON.stringify({
+        findings: [{ asset: { evidence: place, more_evidence: [{ ...place, line: 3 }] } }],
+        limitations: [],
+        errors: [fs.readFileSync(file, "utf8"), path.basename(file), path.dirname(file)],
+      }));`;
+
+    it("scans the editor's text under the file's own name, and points the findings at the file", async () => {
+      const file = path.join(root, "pkg", "keys.py");
+      const scan = await cliEngine(fakeCli(reader)).scanText("import hashlib\r\nunsaved = 1\r\n", file, root);
+      const [text, name, folder] = scan?.errors ?? [];
+      expect(text).toBe("import hashlib\r\nunsaved = 1\r\n");
+      expect(name).toBe("keys.py");
+      const places = scan?.findings.flatMap(({ asset }) => [asset.evidence, ...asset.more_evidence]);
+      expect(places?.map((place) => place.location)).toEqual([file, file]);
+      // the copy was outside the workspace and is gone
+      expect(path.resolve(folder ?? "").startsWith(path.resolve(root))).toBe(false);
+      expect(existsSync(folder ?? "")).toBe(false);
+    });
+
+    it("removes the copy when the CLI fails too", async () => {
+      const failing = `console.error(require("node:path").dirname(process.argv.at(-1))); process.exit(2)`;
+      const error = await cliEngine(fakeCli(failing))
+        .scanText("x = 1\n", path.join(root, "a.py"), root)
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(EngineError);
+      const folder = /CLI failed: (.*)$/.exec((error as Error).message)?.[1] ?? "";
+      expect(folder).toContain("quantumtrace-");
+      expect(existsSync(folder)).toBe(false);
+    });
+  });
 });
 
 describe("autoEngine", () => {
@@ -75,6 +113,10 @@ describe("autoEngine", () => {
     const calls = { api: 0, asked: 0 };
     const api: Engine = {
       scan: () => {
+        calls.api += 1;
+        return Promise.resolve(viaApi);
+      },
+      scanText: () => {
         calls.api += 1;
         return Promise.resolve(viaApi);
       },
@@ -113,6 +155,15 @@ describe("autoEngine", () => {
     const scan = autoEngine(missingCli, undefined, mayUseApi).scan([root], root);
     await expect(scan).rejects.toThrow(/not found.*quantumtrace\.cli\.command/);
     expect(calls.asked).toBe(0);
+  });
+
+  it("scans unsaved text with the CLI only: without it, nothing is asked or uploaded", async () => {
+    const { calls, api, mayUseApi } = setup(true);
+    const local = await autoEngine(workingCli, api, mayUseApi).scanText("x = 1\n", path.join(root, "a.py"), root);
+    expect(local?.errors).toEqual(["from the cli"]);
+    const none = await autoEngine(missingCli, api, mayUseApi).scanText("x = 1\n", path.join(root, "a.py"), root);
+    expect(none).toBeUndefined();
+    expect(calls).toEqual({ api: 0, asked: 0 });
   });
 
   it("does not fall back when the CLI is installed but fails", async () => {
@@ -166,6 +217,15 @@ describe("apiEngine", () => {
     await mkdir(path.join(root, "docs"));
     const scan = await engine.scan([path.join(root, "docs")], root);
     expect(scan.findings).toEqual([]);
+  });
+
+  it("never uploads unsaved text", async () => {
+    const engine = apiEngine({
+      baseUrl: "http://qt.test",
+      fetch: () => Promise.reject(new Error("should not be called")),
+    });
+    const scan = engine.scanText("import hashlib\n", path.join(root, "pkg", "a.py"), root);
+    await expect(scan).resolves.toBeUndefined();
   });
 
   it("points at the API key command on 401", async () => {

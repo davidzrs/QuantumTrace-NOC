@@ -1,8 +1,8 @@
-/** VS Code wiring: scan with the engine, underline the findings, explain and dismiss them. */
+/** VS Code wiring: scan with the engine, underline the findings, explain, fix and dismiss them. */
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import type { Finding } from "@quantumtrace/sdk";
+import type { Finding, FixSuggestion } from "@quantumtrace/sdk";
 import { ApiConsent, originOf } from "./consent";
 import { dismissed, Dismissals, type DismissedRow } from "./dismissals";
 import { DismissedView, fileKey, uriOf } from "./dismissedView";
@@ -16,6 +16,8 @@ import {
   type Scan,
 } from "./engine";
 import { commandLink, explanation, headline, inlineHint, label, type Tone } from "./explain";
+import { EarlierPlaceError, linesLabel, replacement, report, requestFix } from "./fix";
+import { MarkHistory } from "./history";
 import {
   applyEdits,
   mostSevereFirst,
@@ -26,8 +28,11 @@ import {
 
 const SOURCE = "QuantumTrace";
 const DISMISS = "quantumtrace.dismiss";
+const FIX = "quantumtrace.fix";
 const API_KEY_SECRET = "quantumtrace.apiKey";
 const EXTENSIONS = new Set([".py", ".java", ".go"]);
+/** How long the typing must pause before the file is scanned again, in milliseconds. */
+const SETTLE_MS = 400;
 const SELECTOR: vscode.DocumentSelector = { scheme: "file", pattern: "**/*.{py,java,go}" };
 
 /** The pop-up takes the colour of the line it explains. */
@@ -48,6 +53,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const consent = new ApiConsent(context.globalState);
   /** Questions still open in this window, by API origin, so each is asked once. */
   const asking = new Map<string, Promise<boolean>>();
+  // a separate answer: an AI fix also sends the flagged lines on to the model's provider
+  const aiConsent = new ApiConsent(context.globalState, "quantumtrace.aiFixConsent");
+  /** Files with a fix on its way, by URI: one at a time, so a rewrite never lands on moved lines. */
+  const fixing = new Set<string>();
   const dismissedView = new DismissedView(dismissals);
   const dismissedTree = vscode.window.createTreeView("quantumtrace.dismissed", {
     treeDataProvider: dismissedView,
@@ -62,6 +71,10 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   /** Every occurrence from the latest scan of each file (by URI), dismissed ones included. */
   const found = new Map<string, Occurrence[]>();
+  /** The marks each file had for the texts it has read as: an undo gets them back at once. */
+  const history = new MarkHistory();
+  /** Files edited a moment ago, by URI: each is scanned again once the typing pauses. */
+  const settling = new Map<string, ReturnType<typeof setTimeout>>();
   let lastFailure = "";
 
   const lineStyle = (tier: string, ruler: string) =>
@@ -95,6 +108,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const setting = <T>(name: string, fallback: T): T =>
     vscode.workspace.getConfiguration("quantumtrace").get<T>(name, fallback);
   const underlined = () => setting<string>("style", "highlight") === "underline";
+  const isSource = (uri: vscode.Uri) =>
+    uri.scheme === "file" && EXTENSIONS.has(path.extname(uri.fsPath).toLowerCase());
   const shown = (uri: vscode.Uri) =>
     (found.get(uri.toString()) ?? []).filter((o) => !dismissals.has(fileKey(uri), o.key));
   /** Findings under a position, most severe first: the underlined call, or anywhere on a
@@ -172,13 +187,15 @@ export function activate(context: vscode.ExtensionContext): void {
     for (const key of found.keys()) render(vscode.Uri.parse(key));
   }
 
+  /** The setting wins; a build downloaded from the web app falls back to that deployment's API. */
+  const apiUrl = () => setting("api.url", "").trim() || DEFAULT_API_URL;
+
   async function engine(): Promise<Engine> {
     const backend = setting<string>("backend", "auto");
     const cli = cliEngine(setting("cli.command", ["quantumtrace"]));
     if (backend === "cli") return cli;
 
-    // the setting wins; a build downloaded from the web app falls back to that deployment's API
-    const baseUrl = setting("api.url", "").trim() || DEFAULT_API_URL;
+    const baseUrl = apiUrl();
     const api = baseUrl
       ? apiEngine({ baseUrl, apiKey: await context.secrets.get(API_KEY_SECRET) })
       : undefined;
@@ -240,25 +257,31 @@ export function activate(context: vscode.ExtensionContext): void {
     const say = (message: string) => {
       if (asked) void vscode.window.showInformationMessage(message);
     };
-    if (uri.scheme !== "file" || !EXTENSIONS.has(path.extname(uri.fsPath).toLowerCase())) {
+    if (!isSource(uri)) {
       say("QuantumTrace scans Python, Java and Go files.");
-      return;
-    }
-    if (document.isDirty) {
-      // the engine reads the file from disk, so its line numbers would not match the editor
-      say("Save the file, then scan again: QuantumTrace reads it from disk.");
       return;
     }
     const root = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath ?? path.dirname(uri.fsPath);
     const { version } = document;
+    const text = document.getText();
     try {
-      const scan = await (await engine()).scan([uri.fsPath], root);
+      const scanner = await engine();
+      // a saved file is scanned where it is; unsaved edits only where the text stays local
+      const scan = document.isDirty
+        ? await scanner.scanText(text, uri.fsPath, root)
+        : await scanner.scan([uri.fsPath], root);
+      if (!scan) {
+        say("Save the file, then scan again: unsaved edits are only scanned by the local QuantumTrace CLI.");
+        return;
+      }
       lastFailure = "";
       logNotes(scan);
-      if (document.version !== version) return; // edited meanwhile; the next save rescans
+      if (document.version !== version) return; // edited meanwhile; the next pause or save rescans
       const lineAt = (line: number) =>
         line < document.lineCount ? document.lineAt(line).text : undefined;
-      found.set(uri.toString(), occurrences(scan.findings, lineAt));
+      const marks = occurrences(scan.findings, lineAt);
+      found.set(uri.toString(), marks);
+      history.remember(uri.toString(), text, marks);
       render(uri);
       if (!shown(uri).length) say("QuantumTrace found nothing to flag in this file.");
     } catch (error) {
@@ -294,6 +317,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         const before = [...found.keys()];
         found.clear();
+        history.clear();
         for (const [file, findings] of byFile) {
           const lines = (await readFile(file, "utf8")).split(/\r?\n/);
           found.set(
@@ -301,6 +325,7 @@ export function activate(context: vscode.ExtensionContext): void {
             occurrences(findings, (line) => lines[line]),
           );
         }
+        vscode.workspace.textDocuments.forEach(seed);
         // files that had findings before and have none now must be cleared too
         for (const key of new Set([...before, ...found.keys()])) render(vscode.Uri.parse(key));
         summarise();
@@ -322,19 +347,54 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   }
 
+  /** Marks from a scan of the saved file belong to the text the file reads as now: remembered,
+   * so that undoing the first edit after it brings them back. */
+  function seed(document: vscode.TextDocument): void {
+    const key = document.uri.toString();
+    const marks = found.get(key);
+    if (marks && !history.has(key) && !document.isDirty) {
+      history.remember(key, document.getText(), marks);
+    }
+  }
+
   function onEdit(event: vscode.TextDocumentChangeEvent): void {
-    const key = event.document.uri.toString();
+    const { document } = event;
+    const key = document.uri.toString();
     const current = found.get(key);
-    if (!current?.length || !event.contentChanges.length) return;
-    const edits = event.contentChanges.map((change) => ({
-      startLine: change.range.start.line,
-      startChar: change.range.start.character,
-      endLine: change.range.end.line,
-      endChar: change.range.end.character,
-      text: change.text,
-    }));
-    found.set(key, applyEdits(current, edits));
-    render(event.document.uri);
+    if (!current || !event.contentChanges.length) return; // never scanned: nothing to keep up
+    const text = document.getText();
+    // a text the file has read as before (an undo, a redo) gets the marks it had then
+    let marks = history.recall(key, text);
+    if (!marks) {
+      const edits = event.contentChanges.map((change) => ({
+        startLine: change.range.start.line,
+        startChar: change.range.start.character,
+        endLine: change.range.end.line,
+        endChar: change.range.end.character,
+        text: change.text,
+      }));
+      marks = applyEdits(current, edits);
+      history.remember(key, text, marks);
+    }
+    found.set(key, marks);
+    render(document.uri);
+    scanSoon(document);
+  }
+
+  /** Scans a file once the typing pauses, so the marks follow the code without a save. */
+  function scanSoon(document: vscode.TextDocument): void {
+    const key = document.uri.toString();
+    clearTimeout(settling.get(key));
+    settling.delete(key);
+    // turning off scanning on save means scanning on command only
+    if (!setting("scanOnType", true) || !setting("scanOnSave", true)) return;
+    settling.set(
+      key,
+      setTimeout(() => {
+        settling.delete(key);
+        if (!document.isClosed) void scanDocument(document);
+      }, SETTLE_MS),
+    );
   }
 
   /** A plain mouse click on a marked finding opens the same pop-up as hovering it. */
@@ -362,16 +422,19 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!first) return undefined;
     // an underline comes with a diagnostic that already states the reason; a highlight does not
     const wholeLine = !underlined();
-    const sections = hits.map((o) =>
-      explanation(o.finding, commandLink(DISMISS, dismissArgs(document.uri, o)), {
+    const withFix = setting("aiFix", true);
+    const sections = hits.map((o) => {
+      const args = dismissArgs(document.uri, o);
+      return explanation(o.finding, commandLink(DISMISS, args), {
         tone: TONES[severity(o.finding)],
         withRationale: wholeLine,
-      }),
-    );
+        fixLink: withFix ? commandLink(FIX, args) : undefined,
+      });
+    });
     const markdown = new vscode.MarkdownString(sections.join("\n\n---\n\n"));
-    markdown.isTrusted = { enabledCommands: [DISMISS] };
+    markdown.isTrusted = { enabledCommands: [DISMISS, FIX] };
     markdown.supportThemeIcons = true;
-    markdown.supportHtml = true; // for the coloured title and the dismiss button
+    markdown.supportHtml = true; // for the coloured title and the buttons
     return new vscode.Hover(
       markdown,
       wholeLine
@@ -388,21 +451,22 @@ export function activate(context: vscode.ExtensionContext): void {
     const onLines = shown(document.uri).filter(
       (o) => o.line >= range.start.line && o.line <= range.end.line,
     );
-    return mostSevereFirst(onLines).map((o) => {
+    const withFix = setting("aiFix", true);
+    return mostSevereFirst(onLines).flatMap((o) => {
       const ruleId = o.finding.classification.rule_id;
-      const action = new vscode.CodeAction(
-        `Dismiss this ${label(o.finding)} warning`,
-        vscode.CodeActionKind.QuickFix,
-      );
-      action.diagnostics = actionContext.diagnostics.filter(
+      const about = actionContext.diagnostics.filter(
         (d) => d.source === SOURCE && d.range.start.line === o.line && d.code === ruleId,
       );
-      action.command = {
-        command: DISMISS,
-        title: "Dismiss warning",
-        arguments: dismissArgs(document.uri, o),
+      const action = (title: string, command: string, short: string) => {
+        const made = new vscode.CodeAction(title, vscode.CodeActionKind.QuickFix);
+        made.diagnostics = about;
+        made.command = { command, title: short, arguments: dismissArgs(document.uri, o) };
+        return made;
       };
-      return action;
+      return [
+        ...(withFix ? [action(`Fix ${label(o.finding)} with AI`, FIX, "Fix with AI")] : []),
+        action(`Dismiss this ${label(o.finding)} warning`, DISMISS, "Dismiss warning"),
+      ];
     });
   }
 
@@ -444,6 +508,201 @@ export function activate(context: vscode.ExtensionContext): void {
         render(uri);
         refreshDismissed();
       });
+  }
+
+  /** "Fix with AI" on one finding: the API's model rewrites the lines around it, and the rewrite
+   * replaces them in the editor. Nothing is saved, so the user reviews it and can undo it. */
+  async function fix(
+    uriText: string,
+    line: number,
+    ruleId: string,
+    usage: string | null,
+  ): Promise<void> {
+    const uri = vscode.Uri.parse(uriText);
+    const target = shown(uri).find(
+      (o) =>
+        o.line === line &&
+        o.finding.classification.rule_id === ruleId &&
+        o.finding.asset.usage === usage,
+    );
+    if (!target) return; // the pop-up was for a finding that has since gone
+    void vscode.commands.executeCommand("editor.action.hideHover").then(undefined, () => undefined);
+    const { observed } = target.finding.asset;
+    await fixAt(uri, { line, ruleId, usage, observed }, label(target.finding));
+  }
+
+  async function fixAt(
+    uri: vscode.Uri,
+    at: { line: number; ruleId: string; usage: string | null; observed: string },
+    name: string,
+    agreed = false,
+  ): Promise<void> {
+    const baseUrl = apiUrl();
+    if (!baseUrl) {
+      const choice = await vscode.window.showErrorMessage(
+        "Fix with AI needs a QuantumTrace API to write the fix. Set quantumtrace.api.url to its address.",
+        "Open settings",
+      );
+      if (choice) {
+        void vscode.commands.executeCommand("workbench.action.openSettings", "quantumtrace.api.url");
+      }
+      return;
+    }
+    const key = uri.toString();
+    if (fixing.has(key)) {
+      void vscode.window.showInformationMessage("QuantumTrace is still writing a fix for this file.");
+      return;
+    }
+    const document = await vscode.workspace.openTextDocument(uri);
+    const folder = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
+    const file = folder
+      ? path.relative(folder, uri.fsPath).split(path.sep).join("/")
+      : path.basename(uri.fsPath);
+    if (!agreed && !(await maySendForFix(baseUrl, file))) return;
+
+    let earlier: number | undefined;
+    fixing.add(key);
+    try {
+      const { version } = document;
+      const apiKey = await context.secrets.get(API_KEY_SECRET);
+      const suggestion = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `QuantumTrace is writing a fix for ${name}`,
+        },
+        () => requestFix({ baseUrl, apiKey }, { text: document.getText(), name: file, ...at }),
+      );
+      log.appendLine(`\n${report(suggestion, file)}`);
+      await applyFix(document, suggestion, at.line, name, document.version !== version);
+    } catch (error) {
+      if (error instanceof EarlierPlaceError) {
+        earlier = error.line;
+      } else {
+        const message =
+          error instanceof EngineError ? error.message : `Fix with AI failed: ${String(error)}`;
+        log.appendLine(message);
+        void vscode.window.showErrorMessage(message);
+      }
+    } finally {
+      fixing.delete(key);
+    }
+    if (earlier === undefined) return;
+
+    // the engine merges repeats in a file into one finding, and the API fixes its first place
+    const first = `line ${earlier + 1}`;
+    const choice = await vscode.window.showInformationMessage(
+      `This is the same ${name} as on ${first}, and the AI writes its fix for the first place the code appears. Fix ${first} first.`,
+      `Fix ${first}`,
+    );
+    if (choice) await fixAt(uri, { ...at, line: earlier }, name, true);
+  }
+
+  /** Puts a suggestion into the editor, or says why it can't, and offers the way back. */
+  async function applyFix(
+    document: vscode.TextDocument,
+    suggestion: FixSuggestion,
+    line: number,
+    name: string,
+    edited: boolean,
+  ): Promise<void> {
+    const details = (choice: string | undefined) => {
+      if (choice) log.show(true);
+    };
+    if (!suggestion.changed) {
+      void vscode.window
+        .showWarningMessage(
+          `The AI changed nothing on these lines: the fix for ${name} belongs elsewhere in the code.`,
+          "Show what to change",
+        )
+        .then(details);
+      return;
+    }
+    const place = edited
+      ? undefined
+      : replacement(suggestion, (n) =>
+          n < document.lineCount ? document.lineAt(n).text : undefined,
+        );
+    if (!place || line < place.startLine || line > place.endLine) {
+      void vscode.window
+        .showWarningMessage(
+          edited
+            ? "The file changed while the fix was being written, so nothing was applied. Run Fix with AI again."
+            : "Could not place the AI fix: the lines it rewrites are not what the API read (lines over 200 characters are cut short). Nothing was changed.",
+          "Show the fix",
+        )
+        .then(details);
+      return;
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(
+      document.uri,
+      new vscode.Range(new vscode.Position(place.startLine, 0), document.lineAt(place.endLine).range.end),
+      place.lines.join(document.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n"),
+    );
+    if (!(await vscode.workspace.applyEdit(edit))) {
+      void vscode.window.showErrorMessage(
+        "VS Code refused the edit, so the AI fix was not applied. Check that the file is not read-only.",
+      );
+      return;
+    }
+    const applied = document.version;
+    const lastLine = place.startLine + place.lines.length - 1;
+    // back to the editor the file is already in, so Undo is one keystroke away
+    const show = () =>
+      vscode.window.showTextDocument(document, {
+        viewColumn: vscode.window.visibleTextEditors.find((e) => e.document === document)?.viewColumn,
+      });
+    (await show()).revealRange(
+      new vscode.Range(place.startLine, 0, lastLine, 0),
+      vscode.TextEditorRevealType.InCenterIfOutsideViewport,
+    );
+
+    const where = linesLabel(place.startLine, lastLine);
+    const more = suggestion.caveats.length;
+    // not awaited: the command is done, however long the notification stays up
+    const answer = more
+      ? vscode.window.showWarningMessage(
+          `AI fix applied to ${where}, not saved yet. ${suggestion.summary} It needs ${plural(more, "more change")} elsewhere to work.`,
+          "Show what else to change",
+          "Undo",
+        )
+      : vscode.window.showInformationMessage(
+          `AI fix applied to ${where}, not saved yet. ${suggestion.summary} Review it before you save.`,
+          "Show details",
+          "Undo",
+        );
+    void answer.then(async (choice) => {
+      if (choice !== "Undo") return details(choice);
+      if (document.version !== applied) {
+        void vscode.window.showInformationMessage(
+          "The file changed after the fix. Use Undo in the editor to step back to it.",
+        );
+        return;
+      }
+      await show();
+      await vscode.commands.executeCommand("undo");
+    });
+  }
+
+  /** An AI fix sends the file to the API and the flagged lines on to the model's provider, so it
+   * asks first: every time, unless the user said always for this API. */
+  async function maySendForFix(baseUrl: string, file: string): Promise<boolean> {
+    if (aiConsent.answerFor(baseUrl)) return true;
+    const always = "Always send to this API";
+    const choice = await vscode.window.showInformationMessage(
+      `Send ${file} to ${originOf(baseUrl)} to write a fix?`,
+      {
+        modal: true,
+        detail:
+          "The QuantumTrace API scans the file and sends the lines around this finding to Google's Gemini model. " +
+          "The rewrite replaces those lines in the editor without saving, so you can review it or undo it.",
+      },
+      "Send",
+      always,
+    );
+    if (choice === always) await aiConsent.record(baseUrl, true);
+    return choice !== undefined;
   }
 
   async function restoreDismissed(): Promise<void> {
@@ -509,7 +768,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidChangeVisibleTextEditors((editors) => {
       for (const editor of editors) render(editor.document.uri);
     }),
+    { dispose: () => settling.forEach((timer) => clearTimeout(timer)) },
     vscode.workspace.onDidSaveTextDocument(scanQuietly),
+    vscode.workspace.onDidOpenTextDocument(seed),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor && !found.has(editor.document.uri.toString())) scanQuietly(editor.document);
     }),
@@ -539,6 +800,7 @@ export function activate(context: vscode.ExtensionContext): void {
     dismissedTree,
     vscode.commands.registerCommand("quantumtrace.setApiKey", setApiKey),
     vscode.commands.registerCommand(DISMISS, dismiss),
+    vscode.commands.registerCommand(FIX, fix),
   );
 
   refreshDismissed();

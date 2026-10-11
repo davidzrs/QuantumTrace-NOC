@@ -14,6 +14,8 @@ export interface PopupOptions {
   tone?: Tone;
   /** Adds the engine's reason, for when no diagnostic message sits beside the pop-up. */
   withRationale?: boolean;
+  /** Adds the "Fix with AI" button, which runs this `command:` link. */
+  fixLink?: string;
 }
 
 // same words as the web app (packages/ui/src/tiers.ts)
@@ -86,11 +88,11 @@ const themed = (id: string) => `var(--vscode-${id})`;
 const span = (style: string, content: string) => `<span style="${style}">${content}</span>`;
 
 /** Markdown for the pop-up: a coloured title with the tier, the verdict, then how to fix it,
- * the reference, any misuse flags, and the dismiss button. */
+ * the reference, any misuse flags, and the buttons. */
 export function explanation(
   finding: Finding,
   dismissLink: string,
-  { tone, withRationale = false }: PopupOptions = {},
+  { tone, withRationale = false, fixLink }: PopupOptions = {},
 ): string {
   const c = finding.classification;
   const shade: Tone = tone ?? (c.tier === "critical" || c.tier === "medium" ? c.tier : "unknown");
@@ -119,11 +121,17 @@ export function explanation(
   if (confidence) details.push(`$(info)&nbsp; ${confidence}`);
 
   // badge colours are a background and a text colour every theme defines as a readable pair
-  const caption = span(`color:${themed("badge-foreground")};`, "$(close) Dismiss warning");
-  const button = span(
-    `background-color:${themed("badge-background")};border-radius:4px;`,
-    `&nbsp; [${caption}](${dismissLink}) &nbsp;`,
-  );
+  const button = (caption: string, link: string) =>
+    span(
+      `background-color:${themed("badge-background")};border-radius:4px;`,
+      `&nbsp; [${span(`color:${themed("badge-foreground")};`, caption)}](${link}) &nbsp;`,
+    );
+  const buttons = [
+    fixLink ? button("$(sparkle) Fix with AI", fixLink) : undefined,
+    button("$(close) Dismiss warning", dismissLink),
+  ]
+    .filter((b) => b !== undefined)
+    .join(" &nbsp; ");
 
   const lineBreak = "  \n";
   return [
@@ -132,7 +140,7 @@ export function explanation(
       : title,
     withRationale ? escape(c.rationale) : undefined,
     details.length ? details.join(lineBreak) : undefined,
-    button,
+    buttons,
   ]
     .filter((part) => part !== undefined)
     .join("\n\n");
