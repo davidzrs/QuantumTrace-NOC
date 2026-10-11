@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { HeroGlow, useScramble } from "../components/HeroGlow";
+import { ChromeIcon, FirefoxIcon, VsCodeIcon } from "../components/BrandIcons";
 import { RepoScan } from "../components/RepoScan";
 import { ScanBench, type RunningScan } from "../components/ScanBench";
 import { api } from "../lib/api";
@@ -107,48 +108,55 @@ export function Home() {
           <RepoScan disabled={running !== null} onScanned={onScanned} />
         </ScanBench>
 
-        <section aria-labelledby="extension-title" className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-5 rounded-xl border border-rule bg-surface p-5 sm:px-7 sm:py-6 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-center">
-          <div className="grid gap-2">
-            <h2 id="extension-title" className="font-display text-[19px] font-bold tracking-[-0.01em]">
-              Check sites as you browse
-            </h2>
-            <p className="max-w-[68ch] text-ink-muted">
-              The browser extension asks this scanner whether the site in your tab uses post-quantum
-              key exchange, and what its certificate would lose to Shor’s algorithm. Unzip it, then load
-              the folder from <span className="font-mono text-sm text-ink">chrome://extensions</span> with
-              Developer mode on and “Load unpacked”. In Firefox, load the zip as a temporary add-on
-              from <span className="font-mono text-sm text-ink">about:debugging</span>.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <a href="/extension/quantumtrace-chrome.zip" download className="btn btn-primary">
-              Download for Chrome
-            </a>
-            <a href="/extension/quantumtrace-firefox.zip" download className="btn">
-              Download for Firefox
-            </a>
-          </div>
-        </section>
+        {/* The two download panels share their columns, so the VS Code button centres under the
+            browser pair instead of hugging the right edge. */}
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-12 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <section aria-labelledby="extension-title" className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-5 rounded-xl border border-rule bg-surface p-5 sm:px-7 sm:py-6 lg:col-span-2 lg:grid-cols-subgrid lg:items-center">
+            <div className="grid gap-2">
+              <h2 id="extension-title" className="font-display text-[19px] font-bold tracking-[-0.01em]">
+                Check sites as you browse
+              </h2>
+              <p className="max-w-[68ch] text-ink-muted">
+                The browser extension asks this scanner whether the site in your tab uses post-quantum
+                key exchange, and what its certificate would lose to Shor’s algorithm. Unzip it, then load
+                the folder from <span className="font-mono text-sm text-ink">chrome://extensions</span> with
+                Developer mode on and “Load unpacked”. In Firefox, load the zip as a temporary add-on
+                from <span className="font-mono text-sm text-ink">about:debugging</span>.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <a href="/extension/quantumtrace-chrome.zip" download className="btn bg-raise">
+                <ChromeIcon />
+                Download for Chrome
+              </a>
+              <a href="/extension/quantumtrace-firefox.zip" download className="btn bg-raise">
+                <FirefoxIcon />
+                Download for Firefox
+              </a>
+            </div>
+          </section>
 
-        <section aria-labelledby="editor-title" className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-5 rounded-xl border border-rule bg-surface p-5 sm:px-7 sm:py-6 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-center">
-          <div className="grid gap-2">
-            <h2 id="editor-title" className="font-display text-[19px] font-bold tracking-[-0.01em]">
-              Catch it as you write
-            </h2>
-            <p className="max-w-[68ch] text-ink-muted">
-              The VS Code extension highlights the lines of Python, Java and Go that a quantum
-              computer breaks or weakens, and says what to switch to. Open the Extensions view, pick
-              “Install from VSIX…” in its <span className="font-mono text-sm text-ink">...</span> menu
-              and choose the file. It runs the QuantumTrace CLI on your machine; without one, it asks
-              before sending any file to this scanner.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <a href="/extension/quantumtrace-vscode.vsix" download className="btn btn-primary">
-              Download for VS Code
-            </a>
-          </div>
-        </section>
+          <section aria-labelledby="editor-title" className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-5 rounded-xl border border-rule bg-surface p-5 sm:px-7 sm:py-6 lg:col-span-2 lg:grid-cols-subgrid lg:items-center">
+            <div className="grid gap-2">
+              <h2 id="editor-title" className="font-display text-[19px] font-bold tracking-[-0.01em]">
+                Catch it as you write
+              </h2>
+              <p className="max-w-[68ch] text-ink-muted">
+                The VS Code extension highlights the lines of Python, Java and Go that a quantum
+                computer breaks or weakens, and says what to switch to. Open the Extensions view, pick
+                “Install from VSIX…” in its <span className="font-mono text-sm text-ink">...</span> menu
+                and choose the file. It runs the QuantumTrace CLI on your machine; without one, it asks
+                before sending any file to this scanner.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3 lg:justify-center">
+              <a href="/extension/quantumtrace-vscode.vsix" download className="btn bg-raise">
+                <VsCodeIcon />
+                Download for VS Code
+              </a>
+            </div>
+          </section>
+        </div>
 
         <section aria-labelledby="history-title" id="history" className="grid scroll-mt-16 grid-cols-[minmax(0,1fr)] gap-4">
           <div className="flex flex-wrap items-baseline justify-between gap-3">

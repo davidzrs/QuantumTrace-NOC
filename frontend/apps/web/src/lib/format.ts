@@ -35,6 +35,13 @@ export const SOURCE_LABEL: Record<Source, string> = {
   network: "Network capture",
 };
 
+/** One word each, for places too tight for the full label (the debt strip's hover split). */
+export const SOURCE_SHORT: Record<Source, string> = {
+  cloud: "Cloud",
+  code: "Code",
+  network: "Network",
+};
+
 export const SOURCES: Source[] = ["cloud", "code", "network"];
 
 /** Which source a scan note belongs to, from the scanner that wrote it. */

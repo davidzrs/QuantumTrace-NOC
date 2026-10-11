@@ -2,6 +2,7 @@ import { QuantumTraceError, type ScanResult } from "@quantumtrace/sdk";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
 import { api } from "../lib/api";
+import { GitHubIcon } from "./BrandIcons";
 
 /**
  * Scan a public GitHub repository by link. The API downloads the commit itself, so nothing is
@@ -31,7 +32,8 @@ export function RepoScan({
       }}
     >
       <div className="grid gap-1">
-        <label htmlFor={inputId} className="font-display text-lg font-[650] tracking-[-0.01em]">
+        <label htmlFor={inputId} className="flex items-center gap-2.5 font-display text-lg font-[650] tracking-[-0.01em]">
+          <GitHubIcon size={20} />
           Or scan a GitHub repository
         </label>
         <p id={hintId} className="max-w-[78ch] text-sm text-ink-muted">
