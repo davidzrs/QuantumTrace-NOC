@@ -195,11 +195,6 @@ def test_strong_and_post_quantum_choices_stay_safe(tmp_path: Path) -> None:
     assert {tier for tier, _ in found(result)} == {"safe"}, found(result)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Gap: Python rules match `hashlib.md5(` literally, so `import hashlib as hl` and "
-    "`from hashlib import sha1` hide the call.",
-)
 def test_python_hash_through_an_alias_or_a_from_import(tmp_path: Path) -> None:
     result = scan(
         tmp_path,
@@ -219,11 +214,6 @@ def test_python_hash_through_an_alias_or_a_from_import(tmp_path: Path) -> None:
     assert {("medium", "MD5"), ("medium", "SHA-1")} <= found(result)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Gap: Go rules match the package's own name (`md5.Sum`), so a renamed import "
-    '(`m "crypto/md5"`) hides the call.',
-)
 def test_go_hash_through_a_renamed_import(tmp_path: Path) -> None:
     result = scan(
         tmp_path,
@@ -240,10 +230,6 @@ def test_go_hash_through_a_renamed_import(tmp_path: Path) -> None:
     assert ("medium", "MD5") in found(result)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Gap: no rule for JWT libraries, so PyJWT signing with RS256 (RSA, Shor) goes unseen.",
-)
 def test_jwt_signed_with_rs256(tmp_path: Path) -> None:
     result = scan(
         tmp_path,
@@ -259,11 +245,6 @@ def test_jwt_signed_with_rs256(tmp_path: Path) -> None:
     assert ("critical", "RSA") in found(result)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Gap: no rule for Python's `ssl` module or Go's `tls.Config`, so code that pins "
-    "TLS 1.0 or a 3DES suite goes unseen (server configs are covered, code isn't).",
-)
 def test_tls_settings_pinned_in_code(tmp_path: Path) -> None:
     result = scan(
         tmp_path,

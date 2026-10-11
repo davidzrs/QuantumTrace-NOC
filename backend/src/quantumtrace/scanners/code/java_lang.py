@@ -1,4 +1,5 @@
-"""Java: JCA/JCE `getInstance(...)` calls, constants resolved within the file."""
+"""Java: JCA/JCE `getInstance(...)` calls, constants resolved within the file, TLS versions and
+suites set on SSLContext / SSL sockets, and JWT algorithms (jjwt, Nimbus)."""
 
 from __future__ import annotations
 
@@ -6,6 +7,14 @@ import re
 
 from quantumtrace.core.models import Confidence
 from quantumtrace.scanners.code.common import SourceFile
+from quantumtrace.scanners.code.protocol_rules import (
+    call_arguments,
+    emit_jws,
+    emit_tls_suites,
+    emit_tls_version,
+    string_literals,
+    suite_names,
+)
 
 _STR_ARG = r"\(\s*(?:\"([^\"]+)\"|(\w+))"  # "literal" or CONSTANT
 SYMMETRIC = {"AES": "AES", "DESEDE": "3DES", "DES": "DES", "BLOWFISH": "Blowfish",
@@ -105,6 +114,23 @@ def scan(src: SourceFile) -> None:
                  key_size=aes_bits if sym == "AES" else None, flags=flags,
                  context={"transformation": transformation, **({"mode": mode} if mode else {})},
                  confidence=aes_conf if sym == "AES" else Confidence.HIGH)  # fmt: skip
+
+    for m in re.finditer(r"\bSSLContext\.getInstance" + _STR_ARG, text):
+        if protocol := _arg(src, m):  # "TLSv1"; "TLS" and "TLSv1.3" name no weak version
+            emit_tls_version(src, m.start(), protocol, protocol)
+    for m in re.finditer(r"\b[A-Za-z_][\w.]*\.setEnabledProtocols\(", text):
+        for protocol in string_literals(call_arguments(text, m.end() - 1)):
+            emit_tls_version(src, m.start(), protocol, protocol)
+    for m in re.finditer(r"\b[A-Za-z_][\w.]*\.setEnabledCipherSuites\(", text):
+        suites = [s for lit in string_literals(call_arguments(text, m.end() - 1))
+                  for s in suite_names(lit)]  # fmt: skip
+        emit_tls_suites(src, m.start(), m.group(0).rstrip("("), suites)
+    jws = (
+        r"\b(?:[a-z]\w*\.)*(?:SignatureAlgorithm|JWSAlgorithm|Jwts\.SIG)\."
+        r"((?:RS|PS|ES|HS)(?:256|384|512)|EdDSA)\b"
+    )
+    for m in re.finditer(jws, text):
+        emit_jws(src, m.start(), m.group(0), m.group(1))
 
     if re.search(r"^import java\.util\.Random;", text, re.M) or "java.util.Random" in text:
         for m in re.finditer(r"\bnew Random\s*\(", text):

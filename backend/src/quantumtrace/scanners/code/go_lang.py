@@ -1,11 +1,17 @@
-"""Go: crypto/* and golang.org/x/crypto calls, plus a hand-rolled-KDF heuristic."""
+"""Go: crypto/* and golang.org/x/crypto calls, crypto/tls settings, JWT signing methods, plus a
+hand-rolled-KDF heuristic. Packages are found by their imports, so a renamed import
+(`m "crypto/md5"`) is read like `md5`, and `rand` is only math/rand when that is what it names."""
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 from quantumtrace.core.models import Confidence
+from quantumtrace.rules.tls import CIPHER_SUITES
 from quantumtrace.scanners.code.common import SourceFile
+from quantumtrace.scanners.code.imports import go_imports
+from quantumtrace.scanners.code.protocol_rules import emit_jws, emit_tls_suites, emit_tls_version
 
 HASH_CALLS = {
     ("md5", "Sum"): "MD5", ("md5", "New"): "MD5",
@@ -21,28 +27,34 @@ HMAC_HASH = {
     ("sha512", "New384"): "HMAC-SHA384", ("sha512", "New"): "HMAC-SHA512",
 }  # fmt: skip
 CURVES = {"P224": 224, "P256": 256, "P384": 384, "P521": 521}
+HASH_PACKAGES = {
+    "crypto/md5": "md5", "crypto/sha1": "sha1", "crypto/sha256": "sha256",
+    "crypto/sha512": "sha512", "crypto/sha3": "sha3", "golang.org/x/crypto/sha3": "sha3",
+}  # fmt: skip
 
 
 def scan(src: SourceFile) -> None:
     text = src.text
-    imports = set(re.findall(r"\"((?:crypto|golang\.org/x/crypto|math)/[\w/]+)\"", text))
+    packages = go_imports(text)  # name in the code -> import path
     aes_bits, hardcoded = src.symmetric_key_hint()
+    # name in the code -> hash package (`m "crypto/md5"` -> md5); sha3 was read unimported
+    hashes = {name: HASH_PACKAGES[path] for name, path in packages.items() if path in HASH_PACKAGES}
+    if "sha3" not in hashes.values():
+        hashes["sha3"] = "sha3"
 
     hmacs = list(re.finditer(r"\bhmac\.New\(\s*(\w+)\.(\w+)", text))
     hmac_spans = [m.span() for m in hmacs]
     # HMAC calls inside a hand-rolled PBKDF2's loops are its PRF: part of that finding
-    prf_calls = _hand_rolled_kdf(src, hmacs)
+    prf_calls = _hand_rolled_kdf(src, hmacs, hashes)
     for m in hmacs:
         if m.start() in prf_calls:
             continue
-        if name := HMAC_HASH.get((m.group(1), m.group(2))):
+        if name := HMAC_HASH.get((hashes.get(m.group(1), m.group(1)), m.group(2))):
             src.emit(m.start(), m.group(0) + ", ...)", name, "mac")
-    for m in re.finditer(r"\b(md5|sha1|sha256|sha512|sha3)\.(\w+)\(", text):
+    for m in re.finditer(rf"\b({_alternation(hashes)})\.(\w+)\(", text):
         if any(a <= m.start() < b for a, b in hmac_spans):
             continue
-        if f"crypto/{m.group(1)}" not in imports and m.group(1) != "sha3":
-            continue
-        if name := HASH_CALLS.get((m.group(1), m.group(2))):
+        if name := HASH_CALLS.get((hashes[m.group(1)], m.group(2))):
             src.emit(m.start(), m.group(0).rstrip("("), name, "hash")
 
     rsa_bits: int | None = None
@@ -91,12 +103,34 @@ def scan(src: SourceFile) -> None:
                 "bcrypt": "bcrypt"}[m.group(1).split(".")[0]]  # fmt: skip
         src.emit(m.start(), m.group(1), name, "kdf")
 
-    if "math/rand" in imports or "math/rand/v2" in imports:
-        for m in re.finditer(r"\brand\.(Read|Int\w*|Uint\w*)\(", text):
-            src.emit_weak_rng(m.start(), f"math/rand.{m.group(1)}")
+    # math/rand under whatever name it is imported as; `rand` may be crypto/rand instead
+    weak = [n for n, path in packages.items() if path in ("math/rand", "math/rand/v2")]
+    for m in re.finditer(rf"\b(?:{_alternation(weak)})\.(Read|Int\w*|Uint\w*)\(", text):
+        src.emit_weak_rng(m.start(), f"math/rand.{m.group(1)}")
+
+    tls = _alternation([n for n, path in packages.items() if path == "crypto/tls"])
+    for m in re.finditer(rf"\b(?:{tls})\.Version(TLS1[0-2]|SSL30)\b", text):
+        emit_tls_version(src, m.start(), m.group(0), m.group(1))
+    for m in re.finditer(rf"\b(?:{tls})\.(TLS_\w+)\b", text):  # CipherSuites entries
+        if "_WITH_" in m.group(1) or m.group(1) in CIPHER_SUITES.values():
+            emit_tls_suites(src, m.start(), m.group(0), [m.group(1)])
+
+    jwt = _alternation([n for n, path in packages.items() if "jwt" in path])
+    for m in re.finditer(
+        rf"\b(?:{jwt})\.SigningMethod((?:RS|PS|ES|HS)(?:256|384|512)|EdDSA)\b", text
+    ):
+        emit_jws(src, m.start(), m.group(0), m.group(1))
 
 
-def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> set[int]:
+def _alternation(names: Iterable[str]) -> str:
+    """Regex alternation of package names; one that can't match when there are none."""
+    escaped = [re.escape(n) for n in names]
+    return "|".join(escaped) if escaped else "(?!)"
+
+
+def _hand_rolled_kdf(
+    src: SourceFile, hmacs: list[re.Match[str]], hashes: dict[str, str]
+) -> set[int]:
     """HMAC re-applied inside a loop with XOR accumulation is a home-made PBKDF2. Its PRF is an
     HMAC made in the loops, or made before them into a variable the loops use (`prf.Reset()`).
     The PRF is named in the finding like a library PBKDF2's (a SHA-1 or MD5 one is also reported
@@ -114,14 +148,15 @@ def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> set[int]:
         in_loops = [m for m in in_body if _feeds_loops(text, m, loops)]
         if in_loops and "^=" in body and re.search(r"\bfor\b[^{]*\{[^}]*\bfor\b", body, re.S):
             prf = in_loops[0]
-            digest = HASH_CALLS.get((prf.group(1), prf.group(2)))  # SHA-256, SHA-1, ...
+            package = hashes.get(prf.group(1), prf.group(1))
+            digest = HASH_CALLS.get((package, prf.group(2)))  # SHA-256, SHA-1, ...
             label = digest.replace("-", "") if digest else None
             src.emit(func.start(), f"func {func.group(1)} (manual HMAC iteration)", "PBKDF2",
                      "kdf", flags=["hand-rolled-crypto"],
                      variant=f"PBKDF2-HMAC-{label} (hand-rolled)" if label else None,
                      context={"prf": label} if label else None,
                      confidence=Confidence.MEDIUM)  # fmt: skip
-            if digest in ("SHA-1", "MD5") and (mac := HMAC_HASH.get((prf.group(1), prf.group(2)))):
+            if digest in ("SHA-1", "MD5") and (mac := HMAC_HASH.get((package, prf.group(2)))):
                 src.emit(prf.start(), prf.group(0) + ", ...)", mac, "kdf-prf")
             prf_calls.update(m.start() for m in in_loops)
     return prf_calls
