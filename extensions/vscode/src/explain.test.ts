@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandLink, explanation, headline, label } from "./explain";
+import { commandLink, explanation, headline, inlineHint, label } from "./explain";
 import { finding, md5 } from "./fixtures";
 
 const LINK = "command:quantumtrace.dismiss?x";
@@ -21,6 +21,39 @@ describe("headline", () => {
     expect(headline(md5)).toBe(
       "MD5: Trivially collidable; must not be used for any security purpose.",
     );
+  });
+});
+
+describe("inlineHint", () => {
+  it("says in a few words what the finding is and which attack applies", () => {
+    expect(inlineHint([finding()])).toBe("RSA-1024: broken by Shor's algorithm");
+    expect(inlineHint([md5])).toBe("MD5: weakened by Grover's algorithm");
+  });
+
+  it("falls back to what is wrong today, then to the tier, when no quantum attack applies", () => {
+    const rng = finding({
+      asset: { key_size: null },
+      classification: { name: "Non-cryptographic RNG", tier: "medium", threat: "none" },
+    });
+    expect(inlineHint([rng])).toBe("Non-cryptographic RNG: already broken today");
+    const unknown = finding({
+      asset: { key_size: null },
+      classification: { name: "ROT13", tier: "unknown", threat: "unknown", classically_broken: false },
+    });
+    expect(inlineHint([unknown])).toBe("ROT13: unclassified");
+  });
+
+  it("describes the first finding and counts the others on the line", () => {
+    expect(inlineHint([finding(), md5])).toBe("RSA-1024: broken by Shor's algorithm (+1 more)");
+    expect(inlineHint([finding(), md5, md5])).toMatch(/\(\+2 more\)$/);
+    expect(inlineHint([])).toBe("");
+  });
+
+  it("stays short even when the name is long, and keeps the reason", () => {
+    const long = finding({ asset: { variant: "X".repeat(200) } });
+    const hint = inlineHint([long, md5]);
+    expect(hint.length).toBeLessThanOrEqual(72);
+    expect(hint).toMatch(/^X+…: broken by Shor's algorithm \(\+1 more\)$/);
   });
 });
 

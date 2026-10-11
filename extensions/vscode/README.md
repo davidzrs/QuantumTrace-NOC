@@ -10,7 +10,8 @@ It is a thin client. Every tier, rationale and replacement comes from the engine
 
 - Scans a file when you open or save it. Lines with Grover-weakened code (`medium`) are
   highlighted in yellow, lines with Shor-vulnerable code (`critical`) in red. A line with both is
-  red. Resilient algorithms are not marked.
+  red. Resilient algorithms are not marked. A few words after the code say what is wrong, for
+  example "RSA-1024: broken by Shor's algorithm".
 - Click a highlighted line, or hover it, for the explanation: the engine's rationale, the NIST
   replacement, the reference and any misuse flags such as `ecb-mode`.
 - **Dismiss warning** in that pop-up, or under Quick Fix, hides one finding. Dismissals are kept
@@ -41,6 +42,7 @@ it may scan through the API that web app uses, and names the address your files 
 | `quantumtrace.style` | `highlight` | `highlight` colours the whole line. `underline` underlines the call and fills the Problems panel. |
 | `quantumtrace.criticalSeverity` | `error` | Set to `warning` to show Shor-vulnerable code in yellow too. |
 | `quantumtrace.explainOnClick` | `true` | Open the explanation on click, not only on hover. |
+| `quantumtrace.inlineHint` | `true` | Show the few words after each marked line. |
 
 The highlight colours follow the QuantumTrace palette (`frontend/packages/ui/src/tokens.css`): crimson for
 Shor, ochre for Grover. Override them under `workbench.colorCustomizations` with
