@@ -100,6 +100,19 @@ def test_small_dh_is_broken_like_small_rsa() -> None:
     )
 
 
+def test_dsa_is_broken_because_the_standard_withdrew_it() -> None:
+    # Team rule: classically broken = a practical attack OR prohibited by the standards.
+    # FIPS 186-5 dropped DSA for signature generation.
+    rule = default_classifier().lookup("SHA1withDSA")
+    assert rule is not None
+    assert (rule.id, rule.tier, rule.threat, rule.classically_broken) == (
+        "dsa",
+        RiskTier.CRITICAL,
+        QuantumThreat.SHOR,
+        True,
+    )
+
+
 def test_hmac_md5_is_deprecated_but_not_broken() -> None:
     # RFC 6151: HMAC's security doesn't rest on the hash's collision resistance, so the MD5
     # collisions that break plain MD5 don't break HMAC-MD5.

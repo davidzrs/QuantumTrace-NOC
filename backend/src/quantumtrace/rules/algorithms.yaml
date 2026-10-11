@@ -53,11 +53,12 @@ rules:
     primitive: signature
     threat: shor
     tier: critical
+    classically_broken: true
     oid: 1.2.840.10040.4.1
     nist_reference: FIPS 186-5 (DSA withdrawn for signing), NIST IR 8547
     replacement: ML-DSA (FIPS 204) or SLH-DSA (FIPS 205)
     nist_quantum_level: 0
-    rationale: Discrete logarithm is solved by Shor's algorithm.
+    rationale: Discrete logarithm is solved by Shor's algorithm, and FIPS 186-5 no longer approves DSA for generating signatures (only for verifying old ones).
     aliases: [DSA, SHA1withDSA, SHA256withDSA]
   - id: ecdsa
     name: ECDSA
