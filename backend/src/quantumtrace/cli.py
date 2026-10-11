@@ -86,7 +86,7 @@ def report(
     summary.write_bytes(render_summary(result, report_name=report_json.name, cbom_name=cbom.name))
 
     s = result.score
-    console.print(f"{headline(result)} Quantum risk score {s.value} (grade {s.grade}).")
+    console.print(f"{headline(result)} Quantum risk score {s.value:.1f} of 10 (grade {s.grade}).")
     for err in result.errors:
         console.print(f"[red]error[/] {err}")
     console.print(f"Wrote {', '.join(REPORT_FILES)} to [bold]{folder}[/]", style="green")
@@ -189,7 +189,7 @@ def _report(
         console.print(table)
         s = result.score
         console.print(
-            f"Quantum Risk Score: [bold]{s.value}[/] (grade {s.grade}). "
+            f"Quantum Risk Score: [bold]{s.value:.1f}[/] of 10 (grade {s.grade}). "
             f"critical={s.counts.critical} medium={s.counts.medium} "
             f"safe={s.counts.safe} unknown={s.counts.unknown}"
         )

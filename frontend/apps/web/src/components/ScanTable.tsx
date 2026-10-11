@@ -43,7 +43,7 @@ export function ScanTable({
               <td className="py-3.5 pr-4 text-right tabular-nums">{s.findings}</td>
               <td className="py-3.5 pr-4 text-right text-critical tabular-nums">{s.score.counts.critical}</td>
               <td className="py-3.5 pr-4 text-right whitespace-nowrap tabular-nums">
-                <strong>{s.score.value}</strong> <span className="text-ink-muted">{s.score.grade}</span>
+                <strong>{s.score.value.toFixed(1)}</strong> <span className="text-ink-muted">{s.score.grade}</span>
               </td>
               {onDelete && (
                 <td className="py-2 text-right">

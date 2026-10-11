@@ -179,5 +179,5 @@ def test_http_redirect_is_not_plaintext_but_bare_http_is(result: ScanResult) -> 
 
 
 def test_score_is_in_range(result: ScanResult) -> None:
-    assert 0 < result.score.value < 100
+    assert 0 < result.score.value < 10
     assert result.score.counts.critical > 0

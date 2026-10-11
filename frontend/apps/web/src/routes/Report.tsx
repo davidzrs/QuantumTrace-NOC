@@ -238,7 +238,7 @@ function ReportBody({ result }: { result: ScanResult }) {
 
 function ScorePanel({ score, scope }: { score: RiskScore; scope: string }) {
   const grades = ["A", "B", "C", "D", "F"];
-  const at = Math.min(100, Math.max(0, score.value));
+  const at = Math.min(100, Math.max(0, score.value * 10)); // 0-10 as a percentage of the scale
   return (
     <div className="panel qt-fade flex-[1_1_320px] gap-2.5 px-5 py-4">
       <div className="flex items-baseline justify-between gap-3">
@@ -249,7 +249,7 @@ function ScorePanel({ score, scope }: { score: RiskScore; scope: string }) {
         <div className="flex items-baseline gap-2.5">
           <span className="font-display text-[44px] leading-none font-[750] tracking-[-0.03em]">{score.value.toFixed(1)}</span>
           <span className="text-sm whitespace-nowrap text-ink-muted">
-            of 100 · grade <strong className="text-lg text-ink">{score.grade}</strong>
+            of 10 · grade <strong className="text-lg text-ink">{score.grade}</strong>
           </span>
         </div>
         <div className="relative min-w-[150px] flex-1 pt-2.5" role="img" aria-label={`Score ${score.value.toFixed(1)} sits in grade ${score.grade}`}>
@@ -266,7 +266,7 @@ function ScorePanel({ score, scope }: { score: RiskScore; scope: string }) {
           </div>
         </div>
       </div>
-      <p className="text-xs text-ink-faint">0 is quantum-ready, 100 is every asset broken and exposed.</p>
+      <p className="text-xs text-ink-faint">0 is quantum-ready, 10 is every asset broken and exposed.</p>
     </div>
   );
 }

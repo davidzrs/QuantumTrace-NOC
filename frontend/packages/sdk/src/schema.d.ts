@@ -523,7 +523,7 @@ export interface components {
         RiskScore: {
             /**
              * Value
-             * @description 0 = quantum-ready, 100 = maximum exposure
+             * @description 0 = quantum-ready, 10 = maximum exposure, to one decimal
              */
             value: number;
             /** Grade */

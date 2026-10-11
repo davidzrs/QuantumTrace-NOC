@@ -1,4 +1,5 @@
-"""Quantum Risk Score: 0 (quantum-ready) .. 100 (everything Shor-exposed on the internet).
+"""Quantum Risk Score: 0 (quantum-ready) .. 10 (everything Shor-exposed on the internet), to one
+decimal (5.6).
 
 Deliberately simple and explainable for the demo; tune the weights here only.
 """
@@ -15,6 +16,7 @@ from quantumtrace.core.models import (
     RiskTier,
     SourceType,
     TierCounts,
+    grade_for,
 )
 from quantumtrace.core.roles import Role, role_of
 
@@ -37,8 +39,6 @@ EXPOSURE_MULTIPLIER: dict[Exposure, float] = {
 AUTHENTICATION_MULTIPLIER = 0.7
 MAX_PER_FINDING = BROKEN_WEIGHT * EXPOSURE_MULTIPLIER[Exposure.INTERNET]
 
-GRADES = ((20.0, "A"), (40.0, "B"), (60.0, "C"), (80.0, "D"))
-
 
 def finding_weight(finding: Finding) -> float:
     c, a = finding.classification, finding.asset
@@ -59,8 +59,8 @@ def score(findings: Sequence[Finding]) -> RiskScore:
         )
     if not findings:
         return RiskScore(value=0.0, grade="A", counts=counts)
-    value = round(100 * sum(map(finding_weight, findings)) / (len(findings) * MAX_PER_FINDING), 1)
-    grade = next((g for limit, g in GRADES if value < limit), "F")
+    value = round(10 * sum(map(finding_weight, findings)) / (len(findings) * MAX_PER_FINDING), 1)
+    grade = grade_for(value)
     return RiskScore(value=value, grade=grade, counts=counts)
 
 
