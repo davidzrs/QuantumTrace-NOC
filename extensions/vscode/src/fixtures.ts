@@ -33,6 +33,7 @@ export function finding(overrides: Overrides = {}): Finding {
         end_column: null,
         snippet: null,
         snippet_start_line: null,
+        execution: null,
         context: { language: "python" },
         ...overrides.evidence,
       },
@@ -66,6 +67,7 @@ export function repeat(line: number, column: number | null = null): Finding["ass
     end_column: null,
     snippet: null,
     snippet_start_line: null,
+    execution: null,
     context: { language: "python" },
   };
 }

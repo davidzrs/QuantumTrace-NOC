@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from quantumtrace.core.models import CryptoAsset, ScanNote, SourceType
+from quantumtrace.scanners.runtime.model import RuntimeTrace
 
 
 @runtime_checkable
@@ -18,11 +19,12 @@ class Scanner(Protocol):
         """Cheap check (extension / sniffing) whether this scanner handles the file."""
         ...
 
-    def scan(self, paths: Sequence[Path]) -> Iterable[CryptoAsset | ScanNote]:
+    def scan(self, paths: Sequence[Path]) -> Iterable[CryptoAsset | ScanNote | RuntimeTrace]:
         """Scan all accepted files together (lets scanners correlate across files).
 
         Yield a ScanNote for anything the input could not prove (encrypted certificates,
-        unresolved references, ...) so the report states its own blind spots."""
+        unresolved references, ...) so the report states its own blind spots. A RuntimeTrace
+        is evidence about other scanners' findings: the engine lays it over them."""
         ...
 
 

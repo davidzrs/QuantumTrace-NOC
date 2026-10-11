@@ -65,6 +65,7 @@ class Observation(StrEnum):
     """How strongly the input proves the primitive is in use."""
 
     NEGOTIATED = "negotiated"  # seen agreed in live traffic
+    EXECUTED = "executed"  # seen running: a runtime trace of the tests or a debug session
     CONFIGURED = "configured"  # explicitly set (KMS key spec, listener protocol)
     IN_CODE = "in-code"  # called in source code
     PERMITTED = "permitted"  # allowed by a policy; may or may not be negotiated
@@ -77,6 +78,28 @@ class Confidence(StrEnum):
     HIGH = "high"  # read directly: API call with literal args, config field, handshake bytes
     MEDIUM = "medium"  # inferred: key size from elsewhere in the file, heuristic pattern
     LOW = "low"  # guessed or unresolvable (unknown policy, missing handshake half)
+
+
+class Execution(Model):
+    """What a runtime trace saw at one place in the code (the tests or a debug session, run
+    with a QuantumTrace tracer). It never holds keys or data: only names, sizes and counts."""
+
+    ran: bool = Field(description="Whether the line ran during the traced run")
+    calls: int | None = Field(
+        default=None,
+        description="Times the cryptographic call itself was seen; absent when the tracer only "
+        "knows that the line ran",
+    )
+    tests: list[str] = Field(
+        default_factory=list,
+        description="Tests that ran it, the ones with most calls first; at most five",
+    )
+    test_count: int = Field(default=0, description="How many tests ran it in all")
+    parameters: dict[str, str] = Field(
+        default_factory=dict,
+        description="What the call really used: key_size, curve, mode, hash, library, via",
+    )
+    run: str | None = Field(default=None, description="The traced command, e.g. `python -m pytest`")
 
 
 class Evidence(Model):
@@ -97,6 +120,10 @@ class Evidence(Model):
         default=None, description="Line number of the snippet's first line"
     )
     context: dict[str, str] = Field(default_factory=dict)
+    execution: Execution | None = Field(
+        default=None,
+        description="What a runtime trace saw here; absent when no trace covers this place",
+    )
 
 
 class CryptoAsset(Model):

@@ -5,12 +5,15 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { createClient, QuantumTraceError, type ScanResult } from "@quantumtrace/sdk";
+import { isUnder } from "./runtime";
 
 export type Scan = Pick<ScanResult, "findings" | "limitations" | "errors">;
 
 export interface Engine {
-  /** Scan files or directories under `root`. Code evidence comes back with absolute paths. */
-  scan(targets: readonly string[], root: string): Promise<Scan>;
+  /** Scan files or directories under `root`. Code evidence comes back with absolute paths.
+   * `trace` is the runtime trace of the project's last traced run, if there is one: the engine
+   * reads it with the targets and says which of their findings ran. */
+  scan(targets: readonly string[], root: string, trace?: string): Promise<Scan>;
   /** Scan one file as it reads in the editor, unsaved edits included. Undefined when this
    * engine cannot do that with the text staying on this machine: the file is then scanned
    * when it is saved. */
@@ -71,7 +74,9 @@ export function cliEngine(command: readonly string[]): Engine {
       );
     });
   return {
-    scan,
+    // a folder that holds the trace is scanned with it anyway: naming it twice would read it twice
+    scan: (targets, root, trace) =>
+      scan(trace && !targets.some((t) => isUnder(trace, t)) ? [...targets, trace] : targets, root),
     // The CLI reads files, so the text goes into a copy with the same name in this machine's
     // temporary folder (the name tells the engine the language), deleted right after the scan.
     async scanText(text, file, root) {
@@ -111,12 +116,12 @@ export function autoEngine(
   mayUseApi: () => Promise<boolean>,
 ): Engine {
   return {
-    async scan(targets, root) {
+    async scan(targets, root, trace) {
       try {
-        return await cli.scan(targets, root);
+        return await cli.scan(targets, root, trace);
       } catch (error) {
         if (!(error instanceof CliNotFoundError) || !api) throw error;
-        if (await mayUseApi()) return api.scan(targets, root);
+        if (await mayUseApi()) return api.scan(targets, root, trace);
         throw new CliNotFoundError(
           `${error.message} To scan through the QuantumTrace API instead, set quantumtrace.backend to api.`,
         );
@@ -144,9 +149,11 @@ export interface ApiOptions {
 export function apiEngine(options: ApiOptions): Engine {
   const client = createClient(options);
   return {
-    async scan(targets, root) {
+    async scan(targets, root, trace) {
       const paths = (await Promise.all(targets.map(sourceFiles))).flat();
       if (!paths.length) return { findings: [], limitations: [], errors: [] };
+      // the trace names files, lines and tests, never data: it goes with the sources it describes
+      if (trace) paths.push(trace);
       const files = await Promise.all(
         paths.map(async (file) => {
           const name = path.relative(root, file).split(path.sep).join("/");

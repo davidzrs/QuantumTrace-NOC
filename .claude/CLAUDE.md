@@ -33,7 +33,8 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | --- | --- |
 | `backend/src/quantumtrace/core/` | models, classifier, scoring, engine, `roles.py` (usage → role, decides `hndl`) |
 | `backend/src/quantumtrace/rules/` | `algorithms.yaml`, `aws_elb_policies.yaml`, `tls.py` (cipher-suite decomposition) |
-| `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe) |
+| `backend/src/quantumtrace/scanners/` | `cloud/aws.py` (AWS KMS/ACM/ELB), `code/` (Python/Java/Go rule sets in `*_lang.py`), `network/` (scapy flow reassembly, TLS + SSH parsers, `probe.py` live TLS probe), `runtime/` (reads `.quantumtrace/*.jsonl` from a traced run and merges it with the code findings) |
+| `backend/src/quantumtrace/tracers/` | `python/`: the stand-alone tracer (`sitecustomize.py` + `quantumtrace_tracer.py`, stdlib only, `sys.monitoring`) that a traced run puts on `PYTHONPATH`. It records, never classifies |
 | `backend/src/quantumtrace/cbom/` | CycloneDX 1.6 export |
 | `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`; scans in memory or Upstash Redis (`store/`); `github.py` fetches public repos for `/scans/github` (refs from git's `info/refs`, zip from codeload, no GitHub API rate limit) |
 | `backend/tests/` | golden tests against `samples/` for every vector |
@@ -41,7 +42,7 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | `frontend/packages/sdk/` | generated OpenAPI types + typed client |
 | `frontend/packages/ui/` | `TierBadge`, `DebtStrip`, design tokens, shared with extension popups |
 | `extensions/browser/` | WXT popup (Chrome MV3 + Firefox) over `POST /api/v1/probes/tls` |
-| `extensions/vscode/` | VS Code extension (`quantumtrace-vscode`): highlights code findings, explains and dismisses them, via the CLI or the API; "Fix with AI" applies the API's `/fix` rewrite in the editor |
+| `extensions/vscode/` | VS Code extension (`quantumtrace-vscode`): highlights code findings, explains and dismisses them, via the CLI or the API; "Fix with AI" applies the API's `/fix` rewrite in the editor; "Run tests with the runtime tracer" shows which marked lines really ran |
 | `samples/` | organiser data (READMEs in Portuguese). Read-only: never edit to make a test pass |
 
 ## Commands
@@ -70,12 +71,23 @@ cd backend && uv run quantumtrace scan ../samples/cloud-posture -f cbom -o out.c
 - **Traceability.** Every asset carries `Evidence` (file plus line, ARN plus `json_path`, or
   network flow plus `packet`). The API rewrites paths relative to the scanned root, so never
   return absolute server paths.
-- **Say how you know.** Set `CryptoAsset.observation`: `negotiated` (traffic), `configured`,
+- **Say how you know.** Set `CryptoAsset.observation`: `negotiated` (traffic), `executed` (seen
+  running in a traced run; only the runtime merge sets it), `configured`,
   `in-code`, `permitted` (policy allows it, not proven used) or `offered`. Set `confidence`:
   `high` when read directly, `medium` when inferred (e.g. a key size taken from elsewhere in
   the file, or a heuristic), `low` when the input is incomplete. Set `variant` to the precise
   form (AES-128-GCM, Ed25519, ECDSA P-256, x25519). One finding per cipher **and mode**: GCM and CBC
   are different exposures.
+- **In use.** `quantumtrace trace -- <command>` (or the VS Code command) runs the project's tests
+  with `tracers/python`, which writes `.quantumtrace/trace.jsonl`: the lines that ran and each
+  `hashlib` / `hmac` / `cryptography` call with its real parameters, never keys or data. The
+  next scan of the folder reads it (`scanners/runtime`). A traced call at a place the code scan
+  found becomes one finding with `observation: executed`, `confidence: high` and the run's key
+  size, mode and usage; a call the code scan missed is a finding of its own; the other code
+  findings get `evidence.execution.ran` true or false from the lines that ran. A file edited
+  after the run is left out (hash check) and named in a note. Tracer events map to aliases in
+  `runtime/python_api.py`, mirroring `code/python_lang.py`: add an API to both. Only Python
+  3.12+ has a tracer; Java and Go findings get no `execution`.
 - **Group repeats, don't duplicate.** Identical assets at the same place (e.g. a browser's
   parallel sessions to one host) become one finding: the first `evidence` plus
   `more_evidence`. Network scanners use `pcap.group_by_server`. The web inventory further

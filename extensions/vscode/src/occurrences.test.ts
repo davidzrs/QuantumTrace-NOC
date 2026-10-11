@@ -22,6 +22,26 @@ const insert = (line: number, char: number, text: string): Edit => ({
   text,
 });
 
+describe("what a traced run saw of each place", () => {
+  it("stays with its own line: one place of a finding can have run and another not", () => {
+    const seen = { ran: true, calls: 3, tests: ["t::test_a"], test_count: 1, parameters: {}, run: "pytest" };
+    const traced = structuredClone(md5);
+    traced.asset.evidence.execution = seen;
+    for (const place of traced.asset.more_evidence) {
+      place.execution = { ...seen, ran: false, calls: null, tests: [], test_count: 0 };
+    }
+    const places = occurrences([traced], lineAt).map((o) => [o.line, o.execution?.ran, o.execution?.calls]);
+    expect(places).toEqual([
+      [3, true, 3],
+      [5, false, null],
+    ]);
+  });
+
+  it("is null when no trace covers the place", () => {
+    expect(occurrences([md5], lineAt).map((o) => o.execution)).toEqual([null, null]);
+  });
+});
+
 describe("occurrences", () => {
   it("underlines the observed call on every line the engine reported", () => {
     expect(spans(occurrences([md5], lineAt))).toEqual([

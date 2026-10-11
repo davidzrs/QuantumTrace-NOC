@@ -13,7 +13,7 @@ from uuid import UUID
 
 from quantumtrace import __version__
 from quantumtrace.core.classifier import load_misuse
-from quantumtrace.core.models import Finding, Primitive, QuantumThreat, ScanResult
+from quantumtrace.core.models import Execution, Finding, Primitive, QuantumThreat, ScanResult
 
 SPEC_VERSION = "1.6"
 _PROTOCOL_TYPES = {"tls": "tls", "ssh": "ssh", "ipsec": "ipsec", "ike": "ike"}
@@ -121,8 +121,8 @@ def _component(ref: str, findings: list[Finding]) -> dict[str, Any]:
             occ["offset"] = ev.column
         hndl = ", harvest-now-decrypt-later" if f.classification.hndl else ""
         occ["additionalContext"] = (
-            f"[{f.asset.observation.value}, {f.asset.confidence.value} confidence{hndl}] "
-            f"{f.asset.usage or ''} observed={f.asset.observed}"
+            f"[{f.asset.observation.value}, {f.asset.confidence.value} confidence{hndl}"
+            f"{_runtime(ev.execution)}] {f.asset.usage or ''} observed={f.asset.observed}"
         )
         occurrences.append(occ)
 
@@ -160,6 +160,21 @@ def _component(ref: str, findings: list[Finding]) -> dict[str, Any]:
         "evidence": {"occurrences": occurrences},
         "properties": properties,
     }
+
+
+def _runtime(execution: Execution | None) -> str:
+    """What a runtime trace saw at an occurrence, inside the bracket of its
+    `additionalContext`: `, ran 14x in 2 tests, key_size=1024` or `, not run in the traced run`."""
+    if execution is None:
+        return ""
+    if not execution.ran:
+        return ", not run in the traced run"
+    seen = "ran" if execution.calls is None else f"ran {execution.calls}x"
+    tests = f" in {execution.test_count} test(s)" if execution.test_count else ""
+    used = "".join(
+        f", {k}={v}" for k, v in sorted(execution.parameters.items()) if k not in ("api", "curve")
+    )
+    return f", {seen}{tests}{used}"
 
 
 _MODES = {"GCM": "gcm", "CBC": "cbc", "CCM": "ccm", "ECB": "ecb", "CTR": "ctr"}

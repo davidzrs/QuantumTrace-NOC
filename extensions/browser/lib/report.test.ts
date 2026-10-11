@@ -16,7 +16,7 @@ function finding(tier: RiskTier, usage: string, observation = "negotiated", name
       confidence: "high",
       exposure: "internet",
       flags: [],
-      evidence: { source_type: "network", location: "h:443", line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
+      evidence: { source_type: "network", location: "h:443", line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {}, execution: null },
       more_evidence: [],
     },
     classification: {

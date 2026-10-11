@@ -13,6 +13,8 @@ from quantumtrace.core.models import CryptoAsset, Finding, ScanNote, ScanResult
 from quantumtrace.core.scoring import score, score_by_source
 from quantumtrace.scanners import Scanner, registry
 from quantumtrace.scanners.network import probe
+from quantumtrace.scanners.runtime import merge as runtime
+from quantumtrace.scanners.runtime.model import RuntimeTrace
 
 IGNORED_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".idea", ".vscode"}
 
@@ -38,7 +40,8 @@ def run_scan(
     classifier = classifier or default_classifier()
     files = list(iter_files(targets))
 
-    findings: list[Finding] = []
+    assets: list[CryptoAsset] = []
+    traces: list[RuntimeTrace] = []
     notes: list[ScanNote] = []
     used: list[str] = []
     errors: list[str] = []
@@ -50,11 +53,18 @@ def run_scan(
         try:
             for item in scanner.scan(accepted):
                 if isinstance(item, CryptoAsset):
-                    findings.append(classifier.classify(item))
+                    assets.append(item)
+                elif isinstance(item, RuntimeTrace):
+                    traces.append(item)
                 elif item not in notes:
                     notes.append(item)
         except Exception as exc:  # one broken input must not kill the whole scan
             errors.append(f"{scanner.name}: {exc}")
+    try:
+        assets = runtime.apply(assets, traces, files)
+    except Exception as exc:  # a bad trace costs the runtime evidence, not the scan
+        errors.append(f"runtime-trace: {exc}")
+    findings: list[Finding] = [classifier.classify(asset) for asset in assets]
 
     return ScanResult(
         targets=list(display_targets) if display_targets else [str(t) for t in targets],

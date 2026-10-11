@@ -21,6 +21,7 @@ export type ScanNote = Schemas["ScanNote"];
 export type Observation = Schemas["Observation"];
 export type Confidence = Schemas["Confidence"];
 export type FixSuggestion = Schemas["FixSuggestion"];
+export type Execution = Schemas["Execution"];
 
 /** A file and its path inside the folder it came from. */
 export interface UploadItem {
