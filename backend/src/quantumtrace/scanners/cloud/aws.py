@@ -95,12 +95,14 @@ class AwsCloudPostureScanner:
             if (k := _kind(p)) is not None:
                 docs[k[0]].append((p, k[1]))
 
+        # ACM's InUseBy may name the load balancer or the listener: index both
         listener_exposure: dict[str, Exposure] = {}
         for _, data in docs["elb"]:
             for lb in data["LoadBalancers"]:
                 exposure = _scheme_exposure(lb.get("Scheme"))
-                for li in lb.get("Listeners", []):
-                    listener_exposure[li.get("ListenerArn", "")] = exposure
+                arns = [lb.get("LoadBalancerArn")]
+                arns += [li.get("ListenerArn") for li in lb.get("Listeners", [])]
+                listener_exposure.update((arn, exposure) for arn in arns if arn)
 
         known_certs: set[str] = set()
         cert_keys: dict[str, str] = {}  # certificate ARN -> key type (RSA / EC)

@@ -270,19 +270,25 @@ def test_kms_describe_key_response_is_read(tmp_path: Path) -> None:
     assert finding.asset.evidence.context["json_path"] == "$.KeyMetadata.KeySpec"
 
 
-def test_acm_describe_certificate_response_is_read(tmp_path: Path) -> None:
+LB_ARN = "arn:aws:elasticloadbalancing:eu-west-1:123456789012:loadbalancer/app/web/1a2b"
+
+
+# ACM's InUseBy may name the load balancer or one of its listeners
+@pytest.mark.parametrize("in_use_by", [LB_ARN, LISTENER_ARN])
+def test_acm_describe_certificate_response_is_read(tmp_path: Path, in_use_by: str) -> None:
     cert_arn = "arn:aws:acm:eu-west-1:123456789012:certificate/a1b2c3d4-1111-4aaa-8bbb-000000000001"
     cert = {"CertificateArn": cert_arn, "KeyAlgorithm": "RSA_1024", "Type": "IMPORTED",
-            "SignatureAlgorithm": "SHA256WITHRSA", "InUseBy": [LISTENER_ARN]}  # fmt: skip
+            "SignatureAlgorithm": "SHA256WITHRSA", "InUseBy": [in_use_by]}  # fmt: skip
     listener = {"ListenerArn": LISTENER_ARN, "Protocol": "HTTPS", "Port": 443,
                 "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-2021-06",
                 "Certificates": [{"CertificateArn": cert_arn}]}  # fmt: skip
-    lb = {"LoadBalancerName": "web", "Scheme": "internet-facing", "Listeners": [listener]}
+    lb = {"LoadBalancerArn": LB_ARN, "LoadBalancerName": "web", "Scheme": "internet-facing",
+          "Listeners": [listener]}  # fmt: skip
     (tmp_path / "describe-certificate.json").write_text(json.dumps({"Certificate": cert}))
     (tmp_path / "listeners.json").write_text(json.dumps({"LoadBalancers": [lb]}))
     result = run_scan([tmp_path])
     [key] = [f for f in result.findings if f.asset.usage == "certificate-key"]
     assert key.classification.rule_id == "rsa-1024"
     assert key.asset.evidence.context["json_path"] == "$.Certificate.KeyAlgorithm"
-    assert key.asset.exposure is Exposure.INTERNET  # joined to the listener that uses it
+    assert key.asset.exposure is Exposure.INTERNET  # from the internet-facing load balancer
     assert not any("referenced only by ARN" in n.message for n in result.limitations)
