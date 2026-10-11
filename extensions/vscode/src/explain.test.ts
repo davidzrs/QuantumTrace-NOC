@@ -145,6 +145,20 @@ describe("explanation", () => {
     );
   });
 
+  it("puts Fix with AI before the dismiss button, only when given its link", () => {
+    const fixLink = "command:quantumtrace.fix?y";
+    const [fix, dismiss, ...rest] = (explanation(md5, LINK, { fixLink }).split("\n\n").at(-1) ?? "")
+      .split(" &nbsp; ");
+    expect(fix).toBe(
+      '<span style="background-color:var(--vscode-badge-background);border-radius:4px;">&nbsp; ' +
+        '[<span style="color:var(--vscode-badge-foreground);">$(sparkle) Fix with AI</span>]' +
+        `(${fixLink}) &nbsp;</span>`,
+    );
+    expect(dismiss).toContain(`$(close) Dismiss warning</span>](${LINK})`);
+    expect(rest).toEqual([]);
+    expect(explanation(md5, LINK)).not.toContain("Fix with AI");
+  });
+
   it("keeps text taken from source code from becoming a link, a tag or an icon", () => {
     const hostile = finding({
       classification: { name: "[run](command:x) <img src=x> $(flame) &amp;" },

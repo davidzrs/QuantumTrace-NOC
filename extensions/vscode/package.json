@@ -2,7 +2,7 @@
   "name": "quantumtrace-vscode",
   "displayName": "QuantumTrace",
   "description": "Highlights quantum-vulnerable cryptography in Python, Java and Go, explains the risk and says what to migrate to.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "publisher": "quantumtrace",
   "repository": {
@@ -71,12 +71,21 @@
         "command": "quantumtrace.dismiss",
         "title": "Dismiss warning",
         "category": "QuantumTrace"
+      },
+      {
+        "command": "quantumtrace.fix",
+        "title": "Fix with AI",
+        "category": "QuantumTrace"
       }
     ],
     "menus": {
       "commandPalette": [
         {
           "command": "quantumtrace.dismiss",
+          "when": "false"
+        },
+        {
+          "command": "quantumtrace.fix",
           "when": "false"
         },
         {
@@ -226,6 +235,11 @@
           "default": true,
           "description": "Scan Python, Java and Go files when they are opened or saved."
         },
+        "quantumtrace.scanOnType": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Scan a file again a moment after you stop typing, without saving it. Only the local QuantumTrace CLI does this, so unsaved text never leaves this machine; through the API, files are scanned when saved. Has no effect when `quantumtrace.scanOnSave` is off."
+        },
         "quantumtrace.style": {
           "type": "string",
           "enum": [
@@ -261,6 +275,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show a few words after each marked line saying what is wrong with it."
+        },
+        "quantumtrace.aiFix": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer **Fix with AI** on each finding. It asks before sending anything: the file goes to the QuantumTrace API (`quantumtrace.api.url`) and the lines around the finding to the API's AI model."
         }
       }
     }

@@ -1,7 +1,8 @@
 /** How the extension reaches the QuantumTrace engine: the local CLI, or the API through the SDK.
  * Nothing is classified here; both return the engine's findings as they are. */
 import { execFile, type ExecFileException } from "node:child_process";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { createClient, QuantumTraceError, type ScanResult } from "@quantumtrace/sdk";
 
@@ -10,6 +11,10 @@ export type Scan = Pick<ScanResult, "findings" | "limitations" | "errors">;
 export interface Engine {
   /** Scan files or directories under `root`. Code evidence comes back with absolute paths. */
   scan(targets: readonly string[], root: string): Promise<Scan>;
+  /** Scan one file as it reads in the editor, unsaved edits included. Undefined when this
+   * engine cannot do that with the text staying on this machine: the file is then scanned
+   * when it is saved. */
+  scanText(text: string, file: string, root: string): Promise<Scan | undefined>;
 }
 
 /** A failure the user can act on: the message says what failed and what to do next. */
@@ -33,39 +38,58 @@ const SKIPPED_DIRS = new Set([".git", ".venv", "node_modules", "__pycache__", ".
 
 /** Runs `<command> scan --format json -- <targets>`. Code never leaves the machine. */
 export function cliEngine(command: readonly string[]): Engine {
-  return {
-    scan: (targets, root) =>
-      new Promise((resolve, reject) => {
-        const [bin, ...prefix] = command;
-        if (!bin) {
-          reject(
-            new EngineError(
-              "The setting quantumtrace.cli.command is empty. Set it to the command that runs the QuantumTrace CLI.",
-            ),
-          );
-          return;
-        }
-        execFile(
-          bin,
-          [...prefix, "scan", "--format", "json", "--", ...targets],
-          { cwd: root, maxBuffer: MAX_CLI_OUTPUT, windowsHide: true },
-          (error, stdout, stderr) => {
-            if (error) {
-              reject(cliFailure(bin, error, stderr));
-              return;
-            }
-            try {
-              resolve(JSON.parse(stdout) as Scan);
-            } catch {
-              reject(
-                new EngineError(
-                  `"${bin}" did not return a QuantumTrace scan. Check that quantumtrace.cli.command runs the QuantumTrace CLI.`,
-                ),
-              );
-            }
-          },
+  const scan = (targets: readonly string[], root: string) =>
+    new Promise<Scan>((resolve, reject) => {
+      const [bin, ...prefix] = command;
+      if (!bin) {
+        reject(
+          new EngineError(
+            "The setting quantumtrace.cli.command is empty. Set it to the command that runs the QuantumTrace CLI.",
+          ),
         );
-      }),
+        return;
+      }
+      execFile(
+        bin,
+        [...prefix, "scan", "--format", "json", "--", ...targets],
+        { cwd: root, maxBuffer: MAX_CLI_OUTPUT, windowsHide: true },
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(cliFailure(bin, error, stderr));
+            return;
+          }
+          try {
+            resolve(JSON.parse(stdout) as Scan);
+          } catch {
+            reject(
+              new EngineError(
+                `"${bin}" did not return a QuantumTrace scan. Check that quantumtrace.cli.command runs the QuantumTrace CLI.`,
+              ),
+            );
+          }
+        },
+      );
+    });
+  return {
+    scan,
+    // The CLI reads files, so the text goes into a copy with the same name in this machine's
+    // temporary folder (the name tells the engine the language), deleted right after the scan.
+    async scanText(text, file, root) {
+      const folder = await mkdtemp(path.join(tmpdir(), "quantumtrace-"));
+      const copy = path.join(folder, path.basename(file));
+      try {
+        await writeFile(copy, text);
+        const result = await scan([copy], root);
+        for (const { asset } of result.findings) {
+          for (const evidence of [asset.evidence, ...asset.more_evidence]) {
+            if (evidence.source_type === "code") evidence.location = file;
+          }
+        }
+        return result;
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
+    },
   };
 }
 
@@ -96,6 +120,15 @@ export function autoEngine(
         throw new CliNotFoundError(
           `${error.message} To scan through the QuantumTrace API instead, set quantumtrace.backend to api.`,
         );
+      }
+    },
+    // unsaved text never goes to the API: without the CLI, the file is scanned when it is saved
+    async scanText(text, file, root) {
+      try {
+        return await cli.scanText(text, file, root);
+      } catch (error) {
+        if (error instanceof CliNotFoundError) return undefined;
+        throw error;
       }
     },
   };
@@ -137,6 +170,8 @@ export function apiEngine(options: ApiOptions): Engine {
       }
       return result;
     },
+    // what goes to the API is what the user saved, not every pause while typing
+    scanText: () => Promise.resolve(undefined),
   };
 }
 
@@ -154,7 +189,8 @@ async function sourceFiles(target: string): Promise<string[]> {
   return found;
 }
 
-function apiFailure(baseUrl: string, error: unknown): EngineError {
+/** What went wrong with a call to the API, and what to do about it. */
+export function apiFailure(baseUrl: string, error: unknown): EngineError {
   if (!(error instanceof QuantumTraceError)) {
     return new EngineError(
       `Can't reach the QuantumTrace API at ${baseUrl}. Check quantumtrace.api.url and that the API is running.`,

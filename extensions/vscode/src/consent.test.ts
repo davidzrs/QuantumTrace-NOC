@@ -46,6 +46,15 @@ describe("ApiConsent", () => {
     expect(consent.answerFor("http://api.example.com")).toBeUndefined();
   });
 
+  it("keeps one question's answer apart from another's", async () => {
+    const store = memory();
+    await new ApiConsent(store).record("https://api.example.com", true);
+    const aiFix = new ApiConsent(store, "quantumtrace.aiFixConsent");
+    expect(aiFix.answerFor("https://api.example.com")).toBeUndefined();
+    await aiFix.record("https://api.example.com", false);
+    expect(new ApiConsent(store).answerFor("https://api.example.com")).toBe(true);
+  });
+
   it("lets a later answer replace an earlier one", async () => {
     const consent = new ApiConsent(memory());
     await consent.record("https://api.example.com", false);
