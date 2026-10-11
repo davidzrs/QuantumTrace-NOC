@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -181,3 +182,46 @@ def test_http_redirect_is_not_plaintext_but_bare_http_is(result: ScanResult) -> 
 def test_score_is_in_range(result: ScanResult) -> None:
     assert 0 < result.score.value < 100
     assert result.score.counts.critical > 0
+
+
+# ---------------------------------------------------------------- exports beyond the samples
+LISTENER_ARN = "arn:aws:elasticloadbalancing:eu-west-1:123456789012:listener/app/web/1a2b/3c4d"
+KEY_ARN = "arn:aws:kms:eu-west-1:123456789012:key/0a1b2c3d-1111-4e9f-a0b1-c2d3e4f5a6b7"
+
+
+def scan_json(tmp_path: Path, name: str, data: dict[str, object]) -> ScanResult:
+    (tmp_path / name).write_text(json.dumps(data))
+    return run_scan([tmp_path / name])
+
+
+def scan_policy(tmp_path: Path, policy: str) -> ScanResult:
+    listener = {"ListenerArn": LISTENER_ARN, "Protocol": "HTTPS", "Port": 443, "SslPolicy": policy}
+    lb = {"LoadBalancerName": "web", "Scheme": "internet-facing", "Listeners": [listener]}
+    return scan_json(tmp_path, "listeners.json", {"LoadBalancers": [lb]})
+
+
+@pytest.mark.parametrize(
+    "policy",
+    ["ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09", "ELBSecurityPolicy-TLS13-1-2-Ext2-FIPS-2023-04",
+     "ELBSecurityPolicy-TLS13-1-3-RFC9151-FIPS-2023-07", "ELBSecurityPolicy-FS-1-2-Res-2019-08"],
+)  # fmt: skip
+def test_current_aws_policies_resolve(tmp_path: Path, policy: str) -> None:
+    result = scan_policy(tmp_path, policy)
+    assert result.score.counts.unknown == 0
+    assert not any("unknown-ssl-policy" in f.asset.flags for f in result.findings)
+
+
+def test_pq_policy_is_safe_on_tls13_but_keeps_classical_key_exchange(tmp_path: Path) -> None:
+    # ELBSecurityPolicy-TLS13-1-2-PQ-2025-09 also permits TLS 1.2 ECDHE suites and classical
+    # TLS 1.3 groups for clients without ML-KEM: that fallback is exposed to HNDL.
+    result = scan_policy(tmp_path, "ELBSecurityPolicy-TLS13-1-2-PQ-2025-09")
+    protocols = {
+        f.classification.rule_id for f in result.findings if f.asset.usage == "tls-protocol"
+    }
+    assert protocols == {"tls1.2", "tls1.3"}
+    kex = {
+        f.classification.rule_id: f for f in result.findings if f.asset.usage == "tls-key-exchange"
+    }
+    assert "x25519mlkem768" in kex
+    assert kex["ecdh"].classification.hndl
+    assert "classical-fallback" in kex["ecdh"].asset.flags
