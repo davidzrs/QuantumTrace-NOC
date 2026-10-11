@@ -27,23 +27,28 @@ describe("planIntake", () => {
     expect(plan.roots).toEqual(["repo/"]);
   });
 
-  it("sends manifests, configs, certificates and Java builds, whatever their size", () => {
+  it("sends configs, certificates and Java builds whatever their size, not dependency lists", () => {
     const plan = planIntake([
-      pick("repo/requirements.txt"),
-      pick("repo/requirements-dev.txt"),
-      pick("repo/go.mod"),
-      pick("repo/pom.xml"),
-      pick("repo/package.json"),
       pick("deploy/sshd_config"),
       pick("deploy/nginx/site.conf"),
       pick("deploy/certs/api.pem"),
       pick("deploy/keys/id_ed25519.pub"),
       pick("release/vault.jar", MAX_CODE_BYTES + 1),
+      pick("repo/requirements.txt"),
+      pick("repo/pyproject.toml"),
+      pick("repo/go.mod"),
+      pick("repo/pom.xml"),
+      pick("repo/package.json"),
       pick("repo/notes.txt"),
     ]);
-    expect(plan.send.map((p) => p.path)).not.toContain("repo/notes.txt");
-    expect(plan.send).toHaveLength(10);
-    expect(plan.counts.code).toBe(10); // the backend reads all of them as code
+    expect(plan.send.map((p) => p.path)).toEqual([
+      "deploy/sshd_config",
+      "deploy/nginx/site.conf",
+      "deploy/certs/api.pem",
+      "deploy/keys/id_ed25519.pub",
+      "release/vault.jar",
+    ]);
+    expect(plan.counts.code).toBe(5); // the backend reads all of them as code
     expect(plan.skipped.oversized).toBe(0); // the size cap is for source files only
   });
 

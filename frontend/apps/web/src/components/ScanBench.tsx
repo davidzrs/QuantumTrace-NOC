@@ -103,8 +103,8 @@ export function ScanBench({
             Upload what you want to scan
           </h2>
           <p className="max-w-[70ch] text-ink-muted">
-            Cloud exports, source code, dependency manifests, server configs, certificates, Java builds
-            and packet captures, in any mix. Only the files a scanner reads leave this browser, and
+            Cloud exports, source code, server configs, certificates, Java builds and packet
+            captures, in any mix. Only the files a scanner reads leave this browser, and
             nothing is kept but the report.
           </p>
         </div>

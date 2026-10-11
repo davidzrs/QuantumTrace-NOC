@@ -295,8 +295,9 @@ export interface components {
         };
         /**
          * CryptoLibrary
-         * @description A cryptographic library the inputs declare (dependency manifest, bundled package) or that
-         *     code calls into (a standard library). Findings point at it through `CryptoAsset.library`.
+         * @description A cryptographic library that code calls into, or that a build bundles (a jar's
+         *     pom.properties, a Go binary's build info). Findings point at it through
+         *     `CryptoAsset.library`.
          */
         CryptoLibrary: {
             /**
@@ -311,17 +312,17 @@ export interface components {
             name: string;
             /**
              * Ecosystem
-             * @description pypi, golang, maven, npm, or python/go/java for a stdlib
+             * @description pypi, golang, maven, or python/go/java for a stdlib
              */
             ecosystem: string;
             /**
              * Version
-             * @description As declared; None when unpinned
+             * @description As bundled; None when only code shows the library
              */
             version: string | null;
             /**
              * Purl
-             * @description Package URL, for declared packages
+             * @description Package URL, for packages
              */
             purl: string | null;
             /**
@@ -331,7 +332,7 @@ export interface components {
             note: string | null;
             /**
              * Evidence
-             * @description Where it is declared; empty when only code shows it
+             * @description Where a build bundles it; empty when only code shows it
              */
             evidence: components["schemas"]["Evidence"][];
         };
@@ -572,7 +573,7 @@ export interface components {
             errors: string[];
             /**
              * Libraries
-             * @description Cryptographic libraries declared or called; the CBOM lists each as a library component that provides the algorithms its findings use
+             * @description Cryptographic libraries called or bundled; the CBOM lists each as a library component that provides the algorithms its findings use
              */
             libraries: components["schemas"]["CryptoLibrary"][];
         };

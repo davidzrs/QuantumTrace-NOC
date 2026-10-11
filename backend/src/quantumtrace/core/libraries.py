@@ -1,11 +1,12 @@
 """Cryptographic libraries: which packages count, how code imports them, and how findings
 are tied to the library that provides them.
 
-Three inputs name a library: a dependency manifest (with a version), the import behind a call
-in source code (no version), and a binary's bundled build info. Scanners record the library a
-finding came from as an id without version (`pypi:cryptography`); `merge` then points each
-finding at the declared entry nearest to its file, so a monorepo pinning two versions of one
-package keeps them apart in the CBOM.
+Two inputs name a library: the import behind a call in source code (no version), and a build
+that bundles it with its version (a jar's `META-INF/maven/.../pom.properties`, a Go binary's
+build info). Scanners record the library a finding came from as an id without version
+(`pypi:cryptography`); `merge` then points each finding at the bundled entry nearest to its
+file. Dependency manifests aren't read: declaring a package says nothing about which
+algorithms run, so it could never be a finding.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from quantumtrace.core.models import CryptoLibrary, Evidence, Finding
 
 @dataclass(frozen=True)
 class Known:
-    ecosystem: str  # pypi | golang | maven | npm
+    ecosystem: str  # pypi | golang | maven
     name: str  # package name; for a family ("org.bouncycastle:") a prefix
     modules: tuple[str, ...] = ()  # how code reaches it: Python root, Go path, Java package
     note: str | None = None
@@ -34,13 +35,6 @@ CATALOGUE: tuple[Known, ...] = (
     Known("pypi", "cryptography", ("cryptography",)),
     Known("pypi", "pycryptodome", ("Crypto",)),
     Known("pypi", "pycryptodomex", ("Cryptodome",)),
-    Known(
-        "pypi",
-        "pycrypto",
-        ("Crypto",),
-        "Unmaintained since 2013, with known vulnerabilities. Replace with pycryptodome or "
-        "cryptography.",
-    ),
     Known("pypi", "pyopenssl", ("OpenSSL",)),
     Known("pypi", "m2crypto", ("M2Crypto",)),
     Known("pypi", "paramiko", ("paramiko",), "SSH protocol implementation."),
@@ -92,23 +86,6 @@ CATALOGUE: tuple[Known, ...] = (
         ("org.openquantumsafe",),
         "Open Quantum Safe: ML-KEM, ML-DSA.",
     ),
-    # npm
-    Known("npm", "node-forge"),
-    Known("npm", "crypto-js", (), "Discontinued; its passphrase key derivation is MD5-based."),
-    Known("npm", "jsonwebtoken"),
-    Known("npm", "jose"),
-    Known("npm", "bcrypt"),
-    Known("npm", "bcryptjs"),
-    Known("npm", "argon2"),
-    Known("npm", "tweetnacl"),
-    Known("npm", "elliptic"),
-    Known("npm", "node-rsa"),
-    Known("npm", "sjcl"),
-    Known("npm", "jsrsasign"),
-    Known("npm", "openpgp"),
-    Known("npm", "@noble/curves"),
-    Known("npm", "@noble/hashes"),
-    Known("npm", "@noble/post-quantum", (), "ML-KEM, ML-DSA and SLH-DSA in JavaScript."),
 )
 
 STDLIBS: dict[str, tuple[str, str, str | None]] = {
@@ -125,7 +102,7 @@ PYTHON_STDLIB = {"hashlib", "hmac", "secrets", "random", "ssl", "crypt", "uuid",
 
 
 def lookup(ecosystem: str, package: str) -> Known | None:
-    """The catalogue entry for a declared package, or None when it isn't a crypto library."""
+    """The catalogue entry for a package, or None when it isn't a crypto library."""
     if ecosystem == "pypi":
         package = normalise_pypi(package)
     return next((k for k in CATALOGUE if k.ecosystem == ecosystem and k.matches(package)), None)
@@ -163,17 +140,13 @@ def module_library(language: str, module: str) -> str | None:
 
 
 def purl(ecosystem: str, package: str, version: str | None) -> str | None:
-    """Package URL (purl spec) for a declared package; the version only when it is exact."""
+    """Package URL (purl spec) for a package; the version only when it is exact."""
     exact = (
         version if version and re.fullmatch(r"v?\d+(?:\.\d+)*(?:[-+.][\w.]+)?", version) else None
     )
     at = f"@{exact}" if exact else ""
     if ecosystem == "pypi":
         return f"pkg:pypi/{normalise_pypi(package)}{at}"
-    if ecosystem == "npm":
-        return (
-            f"pkg:npm/{package.replace('@', '%40', 1) if package.startswith('@') else package}{at}"
-        )
     if ecosystem == "golang":
         return f"pkg:golang/{package}{at}"
     if ecosystem == "maven" and ":" in package:
@@ -185,7 +158,7 @@ def purl(ecosystem: str, package: str, version: str | None) -> str | None:
 def declared(
     ecosystem: str, package: str, version: str | None, evidence: Evidence
 ) -> CryptoLibrary | None:
-    """A CryptoLibrary for a manifest entry, or None when the package isn't a crypto library."""
+    """A CryptoLibrary for a bundled package, or None when it isn't a crypto library."""
     known = lookup(ecosystem, package)
     if known is None:
         return None
@@ -252,7 +225,7 @@ def merge(declared_libs: Iterable[CryptoLibrary], findings: list[Finding]) -> li
             f.asset.library = _nearest(candidates, f.asset.evidence.location).id
         elif called in STDLIBS:
             listed[called] = stdlib(called)
-        else:  # called in code but not declared in any scanned manifest
+        else:  # called in code, not bundled in any scanned build
             ecosystem, _, package = called.partition(":")
             known = lookup(ecosystem, package)
             listed[called] = CryptoLibrary(
@@ -266,7 +239,7 @@ def merge(declared_libs: Iterable[CryptoLibrary], findings: list[Finding]) -> li
 
 
 def _nearest(candidates: list[CryptoLibrary], location: str) -> CryptoLibrary:
-    """The declaration whose manifest folder is the deepest ancestor of the finding's file."""
+    """The bundled entry whose location is the deepest ancestor of the finding's file."""
     where = location.replace("\\", "/")
 
     def depth(lib: CryptoLibrary) -> int:
