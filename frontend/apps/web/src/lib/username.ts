@@ -19,6 +19,19 @@ export function usernameProblem(name: string): string | null {
   return null;
 }
 
+/**
+ * Why a password can't be used, or null when it can. `confirm` is the second copy typed when
+ * creating an account; null when signing in, where only Firebase knows if it's right.
+ */
+export function passwordProblem(password: string, confirm: string | null): string | null {
+  if (confirm === null) return password ? null : "Enter your password.";
+  if (!password) return "Choose a password.";
+  if (password.length < MIN_PASSWORD) return `Use at least ${MIN_PASSWORD} characters for the password.`;
+  if (!confirm) return "Type the password again to confirm it.";
+  if (confirm !== password) return "The two passwords don’t match. Type them again.";
+  return null;
+}
+
 export function emailFor(name: string): string {
   return `${normaliseUsername(name)}@${DOMAIN}`;
 }

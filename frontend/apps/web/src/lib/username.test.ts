@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authMessage, emailFor, normaliseUsername, usernameOf, usernameProblem } from "./username";
+import { authMessage, emailFor, normaliseUsername, passwordProblem, usernameOf, usernameProblem } from "./username";
 
 describe("usernames", () => {
   it("are case-insensitive and trimmed", () => {
@@ -24,6 +24,26 @@ describe("usernames", () => {
 
   it("accepts letters, digits, - and _", () => {
     expect(usernameProblem("Quantum_Trace-26")).toBeNull();
+  });
+});
+
+describe("passwords", () => {
+  it("only need to be present to sign in", () => {
+    expect(passwordProblem("", null)).toBe("Enter your password.");
+    expect(passwordProblem("x", null)).toBeNull();
+  });
+
+  it.each([
+    ["", "", "Choose a password."],
+    ["short", "short", "Use at least 6 characters for the password."],
+    ["longenough", "", "Type the password again to confirm it."],
+    ["longenough", "longenougH", "The two passwords don’t match. Type them again."],
+  ])("rejects %j confirmed as %j for a new account", (password, confirm, problem) => {
+    expect(passwordProblem(password, confirm)).toBe(problem);
+  });
+
+  it("accept a new password typed the same twice", () => {
+    expect(passwordProblem("longenough", "longenough")).toBeNull();
   });
 });
 

@@ -7,7 +7,7 @@ import { accountScanIds, signIn, signOut, useAccount } from "../lib/account";
 import { api } from "../lib/api";
 import { useDeleteScans } from "../lib/deleteScans";
 import { plural } from "../lib/format";
-import { MIN_PASSWORD, usernameProblem } from "../lib/username";
+import { MIN_PASSWORD, passwordProblem, usernameProblem } from "../lib/username";
 
 /**
  * Optional account page, reached only from the "Account" link in the header. Nothing else on the
@@ -30,7 +30,7 @@ export function Account() {
       ) : account.status === "checking" ? (
         <p aria-live="polite" className="text-ink-muted">Checking your account…</p>
       ) : (
-        <SignInForm />
+        <AccountForm />
       )}
     </main>
   );
@@ -41,92 +41,123 @@ const panel = "grid gap-4 rounded-xl border border-rule bg-surface p-5 sm:px-6";
 const field =
   "min-h-[38px] w-full rounded-lg border border-rule-strong bg-transparent px-3.5 text-[15px] outline-none placeholder:text-ink-faint focus:border-ink disabled:opacity-60";
 
-function SignInForm() {
+/**
+ * Signing in and creating an account are separate modes of one form, so it's always clear which one
+ * the button does. Creating asks for the password twice; the username carries over between modes.
+ */
+function AccountForm() {
   const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState<"in" | "up" | null>(null);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const titleId = useId();
   const userId = useId();
   const passId = useId();
+  const confirmId = useId();
   const hintId = useId();
 
-  async function submit(mode: "in" | "up") {
-    const problem =
-      usernameProblem(username) ??
-      (mode === "up" && password.length < MIN_PASSWORD
-        ? `Use at least ${MIN_PASSWORD} characters for the password.`
-        : !password
-          ? "Enter your password."
-          : null);
+  function switchMode() {
+    setCreating((c) => !c);
+    setPassword("");
+    setConfirm("");
+    setError(null);
+  }
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const problem = usernameProblem(username) ?? passwordProblem(password, creating ? confirm : null);
     if (problem) {
       setError(problem);
       return;
     }
     setError(null);
-    setBusy(mode);
+    setBusy(true);
     try {
-      await signIn(username, password, mode === "up");
+      await signIn(username, password, creating);
       void queryClient.invalidateQueries({ queryKey: ["scans"] });
     } catch (err) {
       setError(err instanceof Error ? err.message : "That didn’t work. Try again in a moment.");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const submitter = (e.nativeEvent as SubmitEvent).submitter;
-    void submit(submitter?.getAttribute("value") === "up" ? "up" : "in");
-  };
-
   return (
-    <form className={panel} onSubmit={onSubmit} aria-busy={busy !== null} noValidate>
-      <div className="grid gap-1.5">
-        <label htmlFor={userId} className="text-sm font-semibold">Username</label>
-        <input
-          id={userId}
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          autoComplete="username"
-          autoCapitalize="none"
-          spellCheck={false}
-          aria-describedby={hintId}
-          disabled={busy !== null}
-          className={field}
-        />
-      </div>
-      <div className="grid gap-1.5">
-        <label htmlFor={passId} className="text-sm font-semibold">Password</label>
-        <input
-          id={passId}
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          disabled={busy !== null}
-          className={field}
-        />
-      </div>
-      <p id={hintId} className="text-sm text-ink-faint">
-        Usernames are 3 to 20 letters, digits, - or _. Passwords need at least {MIN_PASSWORD} characters. There’s
-        no password reset, so keep yours somewhere safe.
+    <>
+      <form className={panel} onSubmit={(e) => void submit(e)} aria-labelledby={titleId} aria-busy={busy} noValidate>
+        <div className="grid gap-1">
+          <h2 id={titleId} className="font-display text-[22px] font-bold tracking-[-0.02em]">
+            {creating ? "Create an account" : "Sign in"}
+          </h2>
+          {creating && <p className="text-[15px] text-ink-muted">Pick a username and a password. No email needed.</p>}
+        </div>
+        <div className="grid gap-1.5">
+          <label htmlFor={userId} className="text-sm font-semibold">Username</label>
+          <input
+            id={userId}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-describedby={creating ? hintId : undefined}
+            disabled={busy}
+            className={field}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <label htmlFor={passId} className="text-sm font-semibold">Password</label>
+          <input
+            id={passId}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={creating ? "new-password" : "current-password"}
+            disabled={busy}
+            className={field}
+          />
+        </div>
+        {creating && (
+          <>
+            <div className="grid gap-1.5">
+              <label htmlFor={confirmId} className="text-sm font-semibold">Confirm password</label>
+              <input
+                id={confirmId}
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                autoComplete="new-password"
+                disabled={busy}
+                className={field}
+              />
+            </div>
+            <p id={hintId} className="text-sm text-ink-faint">
+              Usernames are 3 to 20 letters, digits, - or _. Passwords need at least {MIN_PASSWORD} characters.
+              There’s no password reset, so keep yours somewhere safe.
+            </p>
+          </>
+        )}
+        {error && (
+          <p role="alert" className="border-l-2 border-critical pl-4 text-[15px]">
+            {error}
+          </p>
+        )}
+        <div>
+          <button type="submit" className="btn btn-primary min-w-[150px]" disabled={busy}>
+            {creating ? (busy ? "Creating account…" : "Create account") : busy ? "Signing in…" : "Sign in"}
+          </button>
+        </div>
+      </form>
+      <p className="text-ink-muted">
+        {creating ? "Already have an account? " : "No account yet? "}
+        <button type="button" onClick={switchMode} disabled={busy} className="link font-semibold disabled:opacity-50">
+          {creating ? "Sign in" : "Create one"}
+        </button>
       </p>
-      {error && (
-        <p role="alert" className="border-l-2 border-critical pl-4 text-[15px]">
-          {error}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-3">
-        <button type="submit" value="in" className="btn btn-primary min-w-[120px]" disabled={busy !== null}>
-          {busy === "in" ? "Signing in…" : "Sign in"}
-        </button>
-        <button type="submit" value="up" className="btn min-w-[150px]" disabled={busy !== null}>
-          {busy === "up" ? "Creating account…" : "Create account"}
-        </button>
-      </div>
-    </form>
+    </>
   );
 }
 
