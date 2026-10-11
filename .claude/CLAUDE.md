@@ -147,8 +147,15 @@ Both halves run on Vercel as two projects from this repo (see the `deploy` skill
   check on teammates' PRs. CI is the PR gate, and a merge to `main` deploys.
 - **Storage.** Serverless requests can land on different instances, so the API project needs
   Upstash Redis (Vercel Marketplace). It injects `KV_REST_API_URL`/`KV_REST_API_TOKEN`, and
-  `store/repository.py` keeps scans for 7 days. Without them it falls back to process memory
+  `store/repository.py` keeps scans for 30 days. Without them it falls back to process memory
   (fine locally and in Docker).
+- **Optional accounts.** Username + password through Firebase Auth (the username maps to
+  `<name>@users.quantumtrace.app`; no email is ever sent) and each account's scan ids in
+  Firestore at `users/{uid}/scans/{scanId}`, readable only by its owner (Firestore rules). It's
+  web-only (`lib/account.ts`, `routes/Account.tsx`): the API never sees users and reports stay in
+  Redis. Set `VITE_FIREBASE_API_KEY`, `_AUTH_DOMAIN`, `_PROJECT_ID`, `_APP_ID` on the web project;
+  without them the Account link is hidden. Accounts must stay optional: no prompts, popups or
+  gates in the scan flow, and Firebase loads only for browsers that sign in.
 - **AI fixes.** Set `GEMINI_API_KEY` (free key from aistudio.google.com) on the API project to
   turn on "Fix me" for code findings (`ai/fixer.py`, `POST /scans/{id}/findings/{fid}/fix`, the
   `google-genai` SDK, model `QT_AI_MODEL`, default `gemini-3.5-flash-lite`: ~1 s a fix). It sends the finding's

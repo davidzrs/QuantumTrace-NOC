@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { forget, MAX_HISTORY, readHistory, remember, writeHistory } from "./history";
+import { forget, MAX_HISTORY, mergeHistory, readHistory, remember, writeHistory } from "./history";
 
 describe("scan history", () => {
   // Recent Node versions ship their own (disabled) localStorage that shadows jsdom's.
@@ -29,5 +29,11 @@ describe("scan history", () => {
     expect(readHistory()).toHaveLength(MAX_HISTORY);
     localStorage.setItem("quantumtrace:scan-ids", "{not json");
     expect(readHistory()).toEqual([]);
+  });
+
+  it("merges an account's scans with this browser's, without duplicates", () => {
+    expect(mergeHistory(["b", "a"], ["c", "b"])).toEqual(["b", "a", "c"]);
+    const many = Array.from({ length: MAX_HISTORY }, (_, i) => `s${i}`);
+    expect(mergeHistory(many, ["extra"])).toHaveLength(MAX_HISTORY);
   });
 });

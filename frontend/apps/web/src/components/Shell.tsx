@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, Outlet, ScrollRestoration, useMatch } from "react-router";
+import { useAccount } from "../lib/account";
 import { api } from "../lib/api";
 import { readHistory } from "../lib/history";
 
@@ -10,6 +11,8 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 
 export function Shell() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: 0 });
+  // Optional sign-in: a link only, hidden when this deployment has no Firebase config.
+  const account = useAccount();
   const onReport = useMatch("/scans/:scanId");
   // "Report" opens the report in view, else the latest scan run in this browser.
   const reportId = onReport?.params.scanId ?? readHistory()[0];
@@ -55,6 +58,11 @@ export function Shell() {
                   : "Connecting to scanner"}
             </span>
           </p>
+          {account.status !== "off" && (
+            <NavLink to="/account" className={navClass}>
+              {account.status === "signed-in" ? account.username : "Account"}
+            </NavLink>
+          )}
         </div>
       </header>
       <div className="flex-1">

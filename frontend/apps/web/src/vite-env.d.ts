@@ -3,4 +3,9 @@
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
   readonly VITE_API_KEY?: string;
+  // Optional accounts (lib/account.ts). Public by design: Firestore rules protect the data.
+  readonly VITE_FIREBASE_API_KEY?: string;
+  readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
+  readonly VITE_FIREBASE_PROJECT_ID?: string;
+  readonly VITE_FIREBASE_APP_ID?: string;
 }

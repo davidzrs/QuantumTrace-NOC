@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { Shell } from "./components/Shell";
 import "./index.css";
+import { Account } from "./routes/Account";
 import { Home } from "./routes/Home";
 import { Report } from "./routes/Report";
 
@@ -17,6 +18,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Home /> },
       { path: "scans/:scanId", element: <Report /> },
+      { path: "account", element: <Account /> },
     ],
   },
 ]);
