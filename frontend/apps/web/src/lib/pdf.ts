@@ -2,7 +2,7 @@ import type { Finding, RiskTier, ScanResult } from "@quantumtrace/sdk";
 import type { jsPDF } from "jspdf";
 import { FIX_BY, fixRows, type FixBy, type FixRow } from "./fix";
 import { algorithmLabel, placeLabel, plural, SOURCE_LABEL, SOURCES, usageLabel } from "./format";
-import { heroSub, tally } from "./summary";
+import { heroSub, NOTHING_FOUND, tally } from "./summary";
 import { TIER, TIERS } from "./tiers";
 
 /**
@@ -182,7 +182,7 @@ function draw(doc: jsPDF, result: ScanResult, reportUrl: string): void {
   para(
     all.length
       ? heroSub(counts)
-      : "None of the scanners recognised anything in these files. QuantumTrace reads AWS posture exports (JSON), Python, Java and Go source, and .pcap or .pcapng captures.",
+      : NOTHING_FOUND,
     { size: 10, c: MUTED, after: 7 },
   );
 

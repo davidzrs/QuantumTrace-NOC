@@ -8,7 +8,7 @@ import { TickStrip } from "../components/TickStrip";
 import { api } from "../lib/api";
 import { downloadJson, formatWhen, noteSource, plural, SOURCE_LABEL, SOURCES, type Source } from "../lib/format";
 import { exportPdf } from "../lib/pdf";
-import { heroSub, tally } from "../lib/summary";
+import { heroSub, NOTHING_FOUND, tally } from "../lib/summary";
 
 export function Report() {
   const { scanId = "" } = useParams();
@@ -152,11 +152,7 @@ function ReportBody({ result }: { result: ScanResult }) {
                 <h1 id="hero" className="font-display text-[clamp(30px,3.4vw,46px)] leading-[1.05] font-[750] tracking-[-0.035em]">
                   No cryptography found.
                 </h1>
-                <p className="max-w-[64ch] text-base leading-[1.55] text-ink-muted">
-                  None of the scanners recognised anything in these files. QuantumTrace reads AWS posture
-                  exports (JSON), Python, Java and Go source, SSH and TLS server configs, certificates
-                  and keys, Java and Go builds, and .pcap or .pcapng captures.
-                </p>
+                <p className="max-w-[64ch] text-base leading-[1.55] text-ink-muted">{NOTHING_FOUND}</p>
               </>
             ) : (
               <>
