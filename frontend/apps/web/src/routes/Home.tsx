@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { HeroGlow, useScramble } from "../components/HeroGlow";
 import { ChromeIcon, FirefoxIcon, VsCodeIcon } from "../components/BrandIcons";
-import { RepoScan } from "../components/RepoScan";
+import { RepoScan, SiteScan } from "../components/LinkScan";
 import { ScanBench, type RunningScan } from "../components/ScanBench";
 import { ScanTable } from "../components/ScanTable";
 import { api } from "../lib/api";
@@ -103,7 +103,11 @@ export function Home() {
                 : `The scan didn’t run: ${scanError.message}. Check that the scanner is online and try again.`}
             </p>
           )}
-          <RepoScan disabled={running !== null} onScanned={onScanned} />
+          {/* Two ways in by link, side by side on wide screens. */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <RepoScan disabled={running !== null} onScanned={onScanned} />
+            <SiteScan disabled={running !== null} onScanned={onScanned} />
+          </div>
         </ScanBench>
 
         {/* The two download panels share their columns, so the VS Code button centres under the
@@ -224,9 +228,9 @@ function Hero() {
             .
           </h1>
           <p className="max-w-[58ch] text-base leading-[1.55] text-pretty text-ink-muted">
-            QuantumTrace inventories every algorithm in your AWS exports, source code and packet
-            captures, rates each one Critical, Medium or Safe against quantum attack, and maps it to its
-            NIST replacement. Every result exports as a CycloneDX 1.6 CBOM.
+            QuantumTrace inventories every algorithm in your AWS exports, source code, packet captures
+            and live websites, rates each one Critical, Medium or Safe against quantum attack, and maps it
+            to its NIST replacement. Every result exports as a CycloneDX 1.6 CBOM.
           </p>
           <div>
             <a className="btn btn-primary" href="#upload">Upload files to scan</a>

@@ -181,6 +181,11 @@ Both halves run on Vercel as two projects from this repo (see the `deploy` skill
   zip download, and only scannable files are unpacked, against `max_unpacked_mb`. Public repos
   only: private ones answer 401 like missing ones. Don't add a server-side GitHub token without
   per-user auth, or any caller could read every private repo that token can see.
+- **Website scans.** The home page's website card (`components/LinkScan.tsx`, beside the GitHub
+  one) reads host and port from whatever is pasted (`lib/site.ts`: a link, a bare domain or
+  `host:port`; `http://` is checked on 443) and calls `POST /probes/tls`, the same live handshake
+  as the browser extension. It saves a normal scan, so the report, history and account work as
+  for any other. Public addresses only, unless the API sets `QT_PROBE_PRIVATE`.
 
 ## Skills
 
