@@ -97,10 +97,11 @@ def scan(src: SourceFile) -> None:
 
 
 def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> set[int]:
-    """HMAC re-applied inside a loop with XOR accumulation is a home-made PBKDF2. The HMACs in
-    its loops are its PRF, named in the finding like a library PBKDF2's (a SHA-1 or MD5 one is
-    also reported on its own, as Java's PBKDF2WithHmacSHA1 is). An HMAC outside the loops, such
-    as a MAC over a message, stays a finding of its own. Returns the PRF calls' offsets."""
+    """HMAC re-applied inside a loop with XOR accumulation is a home-made PBKDF2. Its PRF is an
+    HMAC made in the loops, or made before them into a variable the loops use (`prf.Reset()`).
+    The PRF is named in the finding like a library PBKDF2's (a SHA-1 or MD5 one is also reported
+    on its own, as Java's PBKDF2WithHmacSHA1 is). Any other HMAC, such as a MAC over a message
+    after the key is derived, stays a finding of its own. Returns the PRF calls' offsets."""
     text = src.text
     prf_calls: set[int] = set()
     if not hmacs or "^=" not in text or "pbkdf2.Key" in text:
@@ -109,7 +110,8 @@ def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> set[int]:
         end = text.find("\n}", func.end())
         body = text[func.end() : end if end != -1 else len(text)]
         loops = _loop_spans(body, func.end())
-        in_loops = [m for m in hmacs if any(a <= m.start() < b for a, b in loops)]
+        in_body = [m for m in hmacs if func.end() <= m.start() < func.end() + len(body)]
+        in_loops = [m for m in in_body if _feeds_loops(text, m, loops)]
         if in_loops and "^=" in body and re.search(r"\bfor\b[^{]*\{[^}]*\bfor\b", body, re.S):
             prf = in_loops[0]
             digest = HASH_CALLS.get((prf.group(1), prf.group(2)))  # SHA-256, SHA-1, ...
@@ -123,6 +125,17 @@ def _hand_rolled_kdf(src: SourceFile, hmacs: list[re.Match[str]]) -> set[int]:
                 src.emit(prf.start(), prf.group(0) + ", ...)", mac, "kdf-prf")
             prf_calls.update(m.start() for m in in_loops)
     return prf_calls
+
+
+def _feeds_loops(text: str, call: re.Match[str], loops: list[tuple[int, int]]) -> bool:
+    """Whether an hmac.New call is made in a loop, or assigned to a name a loop then uses."""
+    if any(a <= call.start() < b for a, b in loops):
+        return True
+    line_start = text.rfind("\n", 0, call.start()) + 1
+    assigned = re.search(r"(\w+)\s*:?=\s*$", text[line_start : call.start()])
+    return assigned is not None and any(
+        re.search(rf"\b{assigned.group(1)}\.", text[a:b]) for a, b in loops
+    )
 
 
 def _loop_spans(body: str, offset: int) -> list[tuple[int, int]]:

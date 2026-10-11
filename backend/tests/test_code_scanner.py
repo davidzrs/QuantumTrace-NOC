@@ -433,6 +433,42 @@ def test_a_key_literal_is_still_a_hardcoded_key(tmp_path: Path, name: str) -> No
     assert aes.classification.classically_broken
 
 
+def test_hand_rolled_pbkdf2_with_its_hmac_made_before_the_loops(tmp_path: Path) -> None:
+    # the HMAC is made once and reset in each iteration: still the PBKDF2's PRF
+    code = """package kdf
+
+import (
+\t"crypto/hmac"
+\t"crypto/sha256"
+)
+
+func PasswordKey(password, salt []byte, iter int) []byte {
+\tprf := hmac.New(sha256.New, password)
+\tvar out []byte
+\tfor block := 1; block <= 1; block++ {
+\t\tprf.Reset()
+\t\tprf.Write(salt)
+\t\tu := prf.Sum(nil)
+\t\tt := append([]byte{}, u...)
+\t\tfor i := 1; i < iter; i++ {
+\t\t\tprf.Reset()
+\t\t\tprf.Write(u)
+\t\t\tu = prf.Sum(u[:0])
+\t\t\tfor j := range t {
+\t\t\t\tt[j] ^= u[j]
+\t\t\t}
+\t\t}
+\t\tout = append(out, t...)
+\t}
+\treturn out
+}
+"""
+    findings = scan_source(tmp_path, "password.go", code).findings
+    assert {(f.classification.name, f.asset.usage) for f in findings} == {("PBKDF2", "kdf")}
+    [kdf] = findings
+    assert kdf.asset.variant == "PBKDF2-HMAC-SHA256 (hand-rolled)"
+
+
 def test_a_mac_after_a_hand_rolled_pbkdf2_is_still_its_own_finding(tmp_path: Path) -> None:
     # only the HMACs in the iteration loops are the PBKDF2's PRF
     code = """package auth
