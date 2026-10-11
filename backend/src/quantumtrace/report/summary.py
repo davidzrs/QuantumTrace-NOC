@@ -458,7 +458,7 @@ class _Sheet:
         base = top + 5 + 30 * PT * 0.72  # the big number's baseline
         self.canvas.text(value, MARGIN, base, size=30, bold=True, color=INK, baseline="alphabetic")
         self.canvas.text(
-            f"of 100 · grade {result.score.grade}",
+            f"of 10 · grade {result.score.grade}",
             MARGIN + text_width(value, 30, True) + 2.5,
             base,
             size=9,
@@ -467,7 +467,7 @@ class _Sheet:
         )
         self.y = base + 3
         self.para(
-            "0 is quantum-ready, 100 is every asset broken and exposed.",
+            "0 is quantum-ready, 10 is every asset broken and exposed.",
             size=7.5,
             color=FAINT,
             width=54,

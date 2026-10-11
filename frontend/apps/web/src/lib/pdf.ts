@@ -198,9 +198,9 @@ function draw(doc: jsPDF, result: ScanResult, reportUrl: string): void {
     doc.text(value, MARGIN, base);
     const valueW = doc.getTextWidth(value);
     font(9, false, MUTED);
-    doc.text(pdfText(`of 100 · grade ${result.score.grade}`), MARGIN + valueW + 2.5, base);
+    doc.text(pdfText(`of 10 · grade ${result.score.grade}`), MARGIN + valueW + 2.5, base);
     y = base + 3;
-    para("0 is quantum-ready, 100 is every asset broken and exposed.", { size: 7.5, c: FAINT, width: 54 });
+    para("0 is quantum-ready, 10 is every asset broken and exposed.", { size: 7.5, c: FAINT, width: 54 });
     const leftEnd = y;
 
     const x0 = MARGIN + 68;
