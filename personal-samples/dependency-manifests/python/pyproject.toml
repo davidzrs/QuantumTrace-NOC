@@ -1,0 +1,4 @@
+[project]
+name = "billing-service"
+version = "1.0.0"
+dependencies = ["cryptography>=42", "bcrypt==4.2.0", "fastapi"]

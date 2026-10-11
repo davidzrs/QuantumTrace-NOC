@@ -141,7 +141,8 @@ function ReportBody({ result }: { result: ScanResult }) {
                 </h1>
                 <p className="max-w-[64ch] text-base leading-[1.55] text-ink-muted">
                   None of the scanners recognised anything in these files. QuantumTrace reads AWS posture
-                  exports (JSON), Python, Java and Go source, and .pcap or .pcapng captures.
+                  exports (JSON), Python, Java and Go source, dependency manifests, SSH and TLS server
+                  configs, certificates and keys, Java and Go builds, and .pcap or .pcapng captures.
                 </p>
               </>
             ) : (
@@ -209,6 +210,8 @@ function ReportBody({ result }: { result: ScanResult }) {
             onTierChange={setTier}
             source={listSource}
             onSourceChange={setListSource}
+            // reports stored before libraries were inventoried have none
+            libraries={result.libraries ?? []}
             query={query}
             onQueryChange={setQuery}
           />

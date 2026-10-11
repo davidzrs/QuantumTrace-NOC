@@ -1,0 +1,9 @@
+# Fixture for tests/test_config_scanner.py: a legacy OpenSSH server.
+Port 22
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+KexAlgorithms diffie-hellman-group1-sha1,diffie-hellman-group14-sha1,curve25519-sha256
+HostKeyAlgorithms ssh-rsa,ssh-ed25519
+Ciphers aes128-cbc,3des-cbc,chacha20-poly1305@openssh.com
+MACs hmac-sha1,hmac-sha2-256-etm@openssh.com,umac-64@openssh.com
+PubkeyAcceptedAlgorithms +ssh-rsa

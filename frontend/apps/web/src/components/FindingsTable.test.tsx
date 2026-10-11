@@ -20,6 +20,7 @@ function finding(n: number, tier: RiskTier = "critical"): Finding {
       flags: [],
       evidence: { source_type: "cloud", location: `arn:${n}`, line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
       more_evidence: [],
+      library: null,
     },
     classification: {
       rule_id: `rule-${String(n).padStart(2, "0")}`,
@@ -162,5 +163,37 @@ describe("FindingsTable", () => {
     expect(within(off).getByText(/AI fixes are off on this API/)).toBeTruthy();
     const action = within(off).getAllByRole("button", { name: "Fix with AI" }).find((b) => b.classList.contains("btn"));
     expect(action).toHaveProperty("disabled", true);
+  });
+
+  it("leads with a break that works today over the quantum one", () => {
+    const broken = finding(70);
+    broken.classification = {
+      ...broken.classification, classically_broken: true, threat: "shor",
+      rationale: "Shor-vulnerable and only ~80 bits classically; Logjam broke 1024-bit groups.",
+    };
+    const sweet32 = finding(71, "medium");
+    sweet32.classification = {
+      ...sweet32.classification, classically_broken: true, threat: "grover",
+      rationale: "64-bit blocks fall to birthday attacks (Sweet32).",
+    };
+    const future = finding(72);
+    future.classification = { ...future.classification, threat: "shor", rationale: "Factoring falls to Shor." };
+    render(table(undefined, [broken, sweet32, future]));
+    const threat = (algorithm: string) => {
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`Open details for ${algorithm} at`) }));
+      const panel = screen.getByRole("dialog");
+      const fact = within(panel).getByText("Main threat").parentElement!;
+      const text = fact.textContent;
+      fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+      return text;
+    };
+
+    expect(threat("Algorithm 70")).toBe(
+      "Main threatBroken todayShor-vulnerable and only ~80 bits classically; Logjam broke 1024-bit groups.",
+    ); // the rule already names Shor: not repeated
+    expect(threat("Algorithm 71")).toBe(
+      "Main threatBroken today64-bit blocks fall to birthday attacks (Sweet32). Grover’s algorithm weakens it further.",
+    );
+    expect(threat("Algorithm 72")).toBe("Main threatShor’s algorithmFactoring falls to Shor.");
   });
 });

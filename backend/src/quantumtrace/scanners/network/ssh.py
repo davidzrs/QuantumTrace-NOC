@@ -54,7 +54,7 @@ def negotiate(client: list[str], server: list[str]) -> str | None:
 
 def alias(name: str) -> tuple[str, int | None, list[str]]:
     """Map an SSH algorithm name to (classifier alias, key size, flags)."""
-    n = name.split("@")[0].removesuffix("-cert-v01")
+    n = name.split("@")[0].removesuffix("-cert-v01").removeprefix("sk-")  # sk-: FIDO keys
     flags: list[str] = []
     if n.startswith("mlkem768x25519"):
         return "X25519MLKEM768", None, flags
@@ -73,7 +73,7 @@ def alias(name: str) -> tuple[str, int | None, list[str]]:
         return "DH", None, flags
     if n in ("ssh-rsa", "rsa-sha2-256", "rsa-sha2-512"):
         return "RSA", None, flags
-    if n in ("ssh-ed25519", "ssh-ed448"):
+    if n in ("ssh-ed25519", "ssh-ed448", "ed25519"):
         return "Ed25519", None, flags
     if m := re.match(r"ecdsa-sha2-nistp(\d+)", n):
         return "ECDSA", int(m.group(1)), flags

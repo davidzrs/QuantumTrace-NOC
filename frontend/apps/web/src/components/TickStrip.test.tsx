@@ -20,6 +20,7 @@ function finding(tier: RiskTier, source: Source): Finding {
       flags: [],
       evidence: { source_type: source, location: "x", line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
       more_evidence: [],
+      library: null,
     },
     classification: {
       rule_id: "rsa",

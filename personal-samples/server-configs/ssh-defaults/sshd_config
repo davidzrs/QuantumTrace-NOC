@@ -1,0 +1,3 @@
+# Fixture: nothing set, so OpenSSH's defaults apply.
+Port 2222
+PermitRootLogin no

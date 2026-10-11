@@ -1,6 +1,7 @@
 import type { ScanResult } from "@quantumtrace/sdk";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  ACCEPTED_FILES,
   formatBytes,
   fromDrop,
   fromInput,
@@ -102,8 +103,9 @@ export function ScanBench({
             Upload what you want to scan
           </h2>
           <p className="max-w-[70ch] text-ink-muted">
-            Cloud exports, source code and packet captures, in any mix. Only the files a scanner reads
-            leave this browser, and nothing is kept but the report.
+            Cloud exports, source code, dependency manifests, server configs, certificates, Java builds
+            and packet captures, in any mix. Only the files a scanner reads leave this browser, and
+            nothing is kept but the report.
           </p>
         </div>
         <button
@@ -172,11 +174,31 @@ export function ScanBench({
                 {plan ? "Add a folder" : "Choose a folder"}
               </button>
             </div>
-            <p className="font-mono text-xs text-ink-faint">.json .py .java .go .pcap .pcapng .zip</p>
-            <p className="max-w-[56ch] text-xs text-ink-faint">
-              Everything else stays behind, including <span className="font-mono">node_modules</span>,{" "}
-              <span className="font-mono">.git</span>, virtualenvs and build output.
-            </p>
+            {/* Reference, not a call to action: folded under one quiet line so the pickers stay the
+                thing to look at. The paragraph above already names the kinds of input. */}
+            <details className="group w-full max-w-[560px] text-xs text-ink-faint">
+              <summary className="mx-auto flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-1 hover:text-ink-muted [&::-webkit-details-marker]:hidden">
+                Which files are read
+                <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden className="transition-transform group-open:rotate-180">
+                  <path d="m2 4 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                </svg>
+              </summary>
+              <dl className="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] text-left">
+                {ACCEPTED_FILES.map((g, i) => (
+                  <Fragment key={g.label}>
+                    <dt className={`py-1.5 pr-6 ${i ? "border-t border-rule" : ""}`}>{g.label}</dt>
+                    <dd className={`py-1.5 font-mono text-[11.5px] leading-[18px] ${i ? "border-t border-rule" : ""}`}>
+                      {g.files.join("  ")}
+                    </dd>
+                  </Fragment>
+                ))}
+              </dl>
+              <p className="mt-3 border-t border-rule pt-3 text-left leading-relaxed">
+                Everything else stays behind, including <span className="font-mono">node_modules</span>,{" "}
+                <span className="font-mono">.git</span>, virtualenvs and build output. Go executables have
+                no extension: zip them to include them.
+              </p>
+            </details>
           </div>
           {plan && (
             <Manifest plan={plan} limitMb={limitMb} blocker={blocker} onRemove={remove} onReset={() => setStaged(null)} />

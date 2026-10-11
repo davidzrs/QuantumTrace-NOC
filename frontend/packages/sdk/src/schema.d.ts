@@ -287,6 +287,53 @@ export interface components {
              * @description Further places with the identical asset (e.g. repeat sessions to one server)
              */
             more_evidence: components["schemas"]["Evidence"][];
+            /**
+             * Library
+             * @description Id of the CryptoLibrary that provides it (`ScanResult.libraries`), when the input shows which: the import behind a call in code, the package in a binary
+             */
+            library: string | null;
+        };
+        /**
+         * CryptoLibrary
+         * @description A cryptographic library the inputs declare (dependency manifest, bundled package) or that
+         *     code calls into (a standard library). Findings point at it through `CryptoAsset.library`.
+         */
+        CryptoLibrary: {
+            /**
+             * Id
+             * @description ecosystem:name, e.g. pypi:cryptography, go:stdlib
+             */
+            id: string;
+            /**
+             * Name
+             * @description As people call it, e.g. cryptography, Go standard library
+             */
+            name: string;
+            /**
+             * Ecosystem
+             * @description pypi, golang, maven, npm, or python/go/java for a stdlib
+             */
+            ecosystem: string;
+            /**
+             * Version
+             * @description As declared; None when unpinned
+             */
+            version: string | null;
+            /**
+             * Purl
+             * @description Package URL, for declared packages
+             */
+            purl: string | null;
+            /**
+             * Note
+             * @description e.g. which versions ship ML-KEM
+             */
+            note: string | null;
+            /**
+             * Evidence
+             * @description Where it is declared; empty when only code shows it
+             */
+            evidence: components["schemas"]["Evidence"][];
         };
         /**
          * Evidence
@@ -523,6 +570,11 @@ export interface components {
             limitations: components["schemas"]["ScanNote"][];
             /** Errors */
             errors: string[];
+            /**
+             * Libraries
+             * @description Cryptographic libraries declared or called; the CBOM lists each as a library component that provides the algorithms its findings use
+             */
+            libraries: components["schemas"]["CryptoLibrary"][];
         };
         /**
          * ScanSummary

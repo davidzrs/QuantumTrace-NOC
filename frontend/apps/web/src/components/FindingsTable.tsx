@@ -1,4 +1,4 @@
-import type { Finding, RiskTier } from "@quantumtrace/sdk";
+import type { CryptoLibrary, Finding, RiskTier } from "@quantumtrace/sdk";
 import { TierGlyph } from "@quantumtrace/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -52,6 +52,7 @@ export function FindingsTable({
   onTierChange,
   source,
   onSourceChange,
+  libraries = [],
   query,
   onQueryChange: setQuery,
 }: {
@@ -62,6 +63,8 @@ export function FindingsTable({
   /** Only this source's findings (picked on the debt strip). */
   source: Source | undefined;
   onSourceChange: (source: Source | undefined) => void;
+  /** The scan's cryptographic libraries, to name the one behind a finding. */
+  libraries?: CryptoLibrary[];
   query: string;
   onQueryChange: (query: string) => void;
 }) {
@@ -274,6 +277,7 @@ export function FindingsTable({
           index={openIndex}
           total={rows.length}
           scanId={scanId}
+          libraries={libraries}
           onStep={step}
           onClose={() => setOpenKey(null)}
         />
@@ -388,6 +392,7 @@ function FindingPanel({
   index,
   total,
   scanId,
+  libraries,
   onStep,
   onClose,
 }: {
@@ -395,6 +400,7 @@ function FindingPanel({
   index: number;
   total: number;
   scanId: string;
+  libraries: CryptoLibrary[];
   onStep: (to: number) => void;
   onClose: () => void;
 }) {
@@ -509,21 +515,31 @@ function FindingPanel({
             )}
           </div>
         </header>
-        <PanelBody key={row.key} row={row} tab={shown} scanId={scanId} />
+        <PanelBody key={row.key} row={row} tab={shown} scanId={scanId} libraries={libraries} />
       </div>
     </dialog>
   );
 }
 
 /** The panel's scrolling part. Keyed by row, so stepping resets the place and the scroll. */
-function PanelBody({ row, tab, scanId }: { row: FixRow; tab: Tab; scanId: string }) {
+function PanelBody({
+  row,
+  tab,
+  scanId,
+  libraries,
+}: {
+  row: FixRow;
+  tab: Tab;
+  scanId: string;
+  libraries: CryptoLibrary[];
+}) {
   const [pick, setPick] = useState(0);
   const place = row.members[Math.min(pick, row.members.length - 1)] ?? row.lead;
   return (
     // Keyed by tab too: each tab opens at its top.
     <div key={tab} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-5 pb-10 sm:px-7">
       {tab === "details" ? (
-        <FindingDetail row={row} place={place} onPick={setPick} />
+        <FindingDetail row={row} place={place} onPick={setPick} libraries={libraries} />
       ) : tab === "cbom" ? (
         <CbomComponent key={place.id} scanId={scanId} row={row} place={place} onPick={setPick} />
       ) : (
@@ -555,13 +571,24 @@ function placesNote(row: FixRow): string {
   return `Same ${usage} in ${members.length} ${code ? "files" : "places"}${across}${sessions}`;
 }
 
-function FindingDetail({ row, place, onPick }: { row: FixRow; place: Finding; onPick: (index: number) => void }) {
+function FindingDetail({
+  row,
+  place,
+  onPick,
+  libraries,
+}: {
+  row: FixRow;
+  place: Finding;
+  onPick: (index: number) => void;
+  libraries: CryptoLibrary[];
+}) {
   const [allPlaces, setAllPlaces] = useState(false);
   const { lead: f, members } = row;
   const c = f.classification;
   const tier = TIER[c.tier];
   const shownPlaces = allPlaces ? members : members.slice(0, PLACES_SHOWN);
   const refs = standards(c);
+  const library = libraries.find((l) => l.id === place.asset.library);
 
   return (
     <div className="grid gap-7">
@@ -601,7 +628,12 @@ function FindingDetail({ row, place, onPick }: { row: FixRow; place: Finding; on
       </div>
 
       <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        <Fact label="Quantum threat" value={threatLabel(f)} sub={c.rationale} color={c.tier === "critical" ? tier.color : undefined} />
+        <Fact
+          label="Main threat"
+          value={threatLabel(f)}
+          sub={threatNote(f)}
+          color={c.tier === "critical" || c.classically_broken ? tier.color : undefined}
+        />
         <Fact label="Strength" value={strengthLabel(f)} sub={strengthNote(f)} />
         <Fact label="Exposure" value={EXPOSURE_LABEL[f.asset.exposure] ?? f.asset.exposure} sub={exposureNote(f)} />
         <Fact label="Evidence" value={observationLabel(f.asset.observation)} sub={confidenceLabel(f.asset.confidence)} />
@@ -616,6 +648,15 @@ function FindingDetail({ row, place, onPick }: { row: FixRow; place: Finding; on
           <div className="flex gap-2">
             <dt className="text-ink-muted">OID</dt>
             <dd className="font-mono text-ink-soft">{c.oid}</dd>
+          </div>
+        )}
+        {library && (
+          <div className="flex min-w-0 gap-2" title={library.note ?? undefined}>
+            <dt className="text-ink-muted">Library</dt>
+            <dd className="font-mono text-ink-soft">
+              {library.name}
+              {library.version ? ` ${library.version}` : ""}
+            </dd>
           </div>
         )}
       </dl>
@@ -668,12 +709,27 @@ function exposureNote(f: Finding): string {
   return EXPOSURE_NOTE[f.asset.exposure] ?? "";
 }
 
+/** What weighs most: an attack that works today beats a quantum one that needs a future machine. */
 function threatLabel(f: Finding): string {
   const c = f.classification;
+  if (c.classically_broken) return "Broken today";
   if (c.threat === "shor") return "Shor’s algorithm";
   if (c.threat === "grover") return "Grover’s algorithm";
-  if (c.threat === "none") return c.classically_broken ? "Not needed" : "None known";
+  if (c.threat === "none") return "None known";
   return "Not classified";
+}
+
+/** The rule's reason; for what is broken today, also the quantum threat behind it when unsaid. */
+function threatNote(f: Finding): string {
+  const c = f.classification;
+  if (!c.classically_broken) return c.rationale;
+  const later =
+    c.threat === "shor" && !c.rationale.includes("Shor")
+      ? "Shor’s algorithm breaks it as well."
+      : c.threat === "grover" && !c.rationale.includes("Grover")
+        ? "Grover’s algorithm weakens it further."
+        : "";
+  return [c.rationale, later].filter(Boolean).join(" ");
 }
 
 function strengthLabel(f: Finding): string {
@@ -692,7 +748,6 @@ function strengthNote(f: Finding): string {
         ? "No quantum security."
         : `NIST PQC category ${c.nist_quantum_level}.`
       : "",
-    c.classically_broken ? "Broken without a quantum computer." : "",
   ];
   return parts.filter(Boolean).join(" ");
 }

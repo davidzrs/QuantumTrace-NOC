@@ -28,7 +28,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from cryptography import x509
-from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
 
 from quantumtrace.core.models import (
     CryptoAsset,
@@ -38,6 +37,7 @@ from quantumtrace.core.models import (
     ScanNote,
     SourceType,
 )
+from quantumtrace.scanners.keys.material import certificate_assets, describe
 from quantumtrace.scanners.network import tls
 from quantumtrace.scanners.network.pcap import SERVICES, Tally, exposure_of, tls_assets
 
@@ -291,8 +291,6 @@ def _evidence(target: Target, probe_name: str) -> Evidence:
 
 # ---------------------------------------------------------------- certificate
 
-_CURVES = {"secp256r1": "P-256", "secp384r1": "P-384", "secp521r1": "P-521"}
-
 
 def _certificate(target: Target, exposure: Exposure) -> Iterator[CryptoAsset | ScanNote]:
     # Inventory, not validation: expired, self-signed and weak-cipher servers must still answer.
@@ -317,61 +315,8 @@ def _certificate(target: Target, exposure: Exposure) -> Iterator[CryptoAsset | S
 
     cert = x509.load_der_x509_certificate(der)
     evidence = _evidence(target, "certificate")
-    evidence.context.update(
-        {
-            "subject": cert.subject.rfc4514_string(),
-            "issuer": cert.issuer.rfc4514_string(),
-            "not_after": cert.not_valid_after_utc.date().isoformat(),
-        }
-    )
-
-    def asset(observed: str, alias: str, usage: str, **kw: object) -> CryptoAsset:
-        return CryptoAsset.model_validate(
-            {
-                "observed": observed,
-                "algorithm": alias,
-                "usage": usage,
-                "observation": Observation.CONFIGURED,
-                "exposure": exposure,
-                "evidence": evidence,
-                **kw,
-            }
-        )
-
-    key_oid = cert.public_key_algorithm_oid
-    key_name = getattr(key_oid, "_name", None) or key_oid.dotted_string
-    try:
-        key = cert.public_key()
-    except Exception:  # an algorithm cryptography can't load (e.g. ML-DSA): name it by OID
-        key = None
-    if isinstance(key, rsa.RSAPublicKey):
-        yield asset(key_name, "RSA", "certificate-key", key_size=key.key_size,
-                    variant=f"RSA-{key.key_size}")  # fmt: skip
-    elif isinstance(key, ec.EllipticCurvePublicKey):
-        curve = _CURVES.get(key.curve.name, key.curve.name)
-        yield asset(key_name, "ECDSA", "certificate-key", key_size=key.curve.key_size,
-                    variant=f"ECDSA {curve}")  # fmt: skip
-    elif isinstance(key, ed25519.Ed25519PublicKey | ed448.Ed448PublicKey):
-        name = "Ed25519" if isinstance(key, ed25519.Ed25519PublicKey) else "Ed448"
-        yield asset(key_name, name, "certificate-key", variant=name)
-    else:
-        yield asset(key_name, key_name, "certificate-key")
-
-    sig_oid = cert.signature_algorithm_oid
-    sig_name = getattr(sig_oid, "_name", None) or sig_oid.dotted_string
-    lowered = sig_name.lower()
-    family = (
-        "RSA" if "rsa" in lowered
-        else "ECDSA" if "ecdsa" in lowered
-        else "Ed25519" if "ed25519" in lowered
-        else "Ed448" if "ed448" in lowered
-        else sig_name
-    )  # fmt: skip
-    yield asset(sig_name, family, "certificate-signature")
-    digest = cert.signature_hash_algorithm
-    if digest is not None:
-        alias = digest.name.upper().replace("SHA", "SHA-", 1)  # sha256 -> SHA-256
-        yield asset(sig_name, alias, "certificate-signature-digest")
+    evidence.context.update(describe(cert))
+    yield from certificate_assets(cert, evidence, exposure=exposure)
     yield ScanNote(
         scanner=SCANNER,
         message=(

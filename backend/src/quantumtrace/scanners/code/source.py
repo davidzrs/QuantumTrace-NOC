@@ -3,7 +3,7 @@
 Regex-driven, per-language rule sets (python_lang / java_lang / go_lang) that map API usage
 to classifier aliases, resolve same-file constants for key sizes and modes, and flag misuse
 (ECB, hard-coded keys, non-CSPRNG randomness, hand-rolled primitives). Every asset carries
-file + line + snippet evidence.
+file + line + snippet evidence, and the library each call comes from (`imports.py`).
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from pathlib import Path
 from quantumtrace.core.models import CryptoAsset, ScanNote, SourceType
 from quantumtrace.scanners.code import go_lang, java_lang, python_lang
 from quantumtrace.scanners.code.common import SourceFile
+from quantumtrace.scanners.code.imports import attribute
 
 LANGUAGES: dict[str, tuple[str, Callable[[SourceFile], None]]] = {
     ".py": ("python", python_lang.scan),
@@ -38,4 +39,6 @@ class SourceCodeScanner:
             language, handler = LANGUAGES[path.suffix.lower()]
             src = SourceFile.load(path, language)
             handler(src)
-            yield from src.assets
+            assets = list(src.assets)
+            attribute(language, src.text, src.raw, assets)  # which library each call comes from
+            yield from assets

@@ -7,12 +7,22 @@ import pytest
 from quantumtrace.core.models import Finding, ScanResult
 
 SAMPLES = Path(__file__).resolve().parents[2] / "samples"
+PERSONAL_SAMPLES = Path(__file__).resolve().parents[2] / "personal-samples"
+SAMPLE_SOURCES = Path(__file__).resolve().parent / "sample_sources"  # what built the binaries
 
 
 @pytest.fixture(scope="session")
 def samples() -> Path:
     assert SAMPLES.is_dir(), f"samples/ not found at {SAMPLES}"
     return SAMPLES
+
+
+@pytest.fixture(scope="session")
+def personal_samples() -> Path:
+    """Our own inputs for the file types the organisers' samples don't cover
+    (personal-samples/README.md at the repository root)."""
+    assert PERSONAL_SAMPLES.is_dir(), f"personal-samples/ not found at {PERSONAL_SAMPLES}"
+    return PERSONAL_SAMPLES
 
 
 def summarise(result: ScanResult) -> set[tuple[str, str, str]]:

@@ -192,10 +192,11 @@ def _relativise(result: ScanResult, root: Path, prefix: str) -> None:
             return value
         return prefix + value.removeprefix(base).replace(os.sep, "/")
 
-    for f in result.findings:
-        for ev in f.asset.all_evidence:
-            ev.location = fix(ev.location)
-            ev.context = {k: fix(v) for k, v in ev.context.items()}
+    for ev in [e for f in result.findings for e in f.asset.all_evidence] + [
+        e for lib in result.libraries for e in lib.evidence
+    ]:
+        ev.location = fix(ev.location)
+        ev.context = {k: fix(v) for k, v in ev.context.items()}
 
 
 MAX_HISTORY = 50
