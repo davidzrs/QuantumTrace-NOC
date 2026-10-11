@@ -62,6 +62,24 @@ describe("cliEngine", () => {
     await expect(cliEngine([]).scan([root], root)).rejects.toThrow(/cli\.command is empty/);
   });
 
+  describe("with a runtime trace", () => {
+    const echo =
+      "console.log(JSON.stringify({findings: [], limitations: [], errors: process.argv.slice(5)}))";
+
+    it("hands the trace to the CLI next to a single file, so the engine can say what ran", async () => {
+      const file = path.join(root, "app", "auth.py");
+      const trace = path.join(root, ".quantumtrace", "trace.jsonl");
+      const scan = await cliEngine(fakeCli(echo)).scan([file], root, trace);
+      expect(scan.errors).toEqual([file, trace]);
+    });
+
+    it("does not name it twice when the scanned folder already holds it", async () => {
+      const trace = path.join(root, ".quantumtrace", "trace.jsonl");
+      expect((await cliEngine(fakeCli(echo)).scan([root], root, trace)).errors).toEqual([root]);
+      expect((await cliEngine(fakeCli(echo)).scan([root], root)).errors).toEqual([root]);
+    });
+  });
+
   describe("scanText", () => {
     // reports the file it was given: its text, its name and where it was, with one finding in it
     const reader = `
@@ -217,6 +235,31 @@ describe("apiEngine", () => {
     await mkdir(path.join(root, "docs"));
     const scan = await engine.scan([path.join(root, "docs")], root);
     expect(scan.findings).toEqual([]);
+  });
+
+  it("uploads the trace with the sources it describes, under its own path", async () => {
+    await mkdir(path.join(root, ".quantumtrace"));
+    const trace = path.join(root, ".quantumtrace", "trace.jsonl");
+    await writeFile(trace, '{"kind":"run"}\n');
+    const uploaded: Record<string, string> = {};
+    const engine = apiEngine({
+      baseUrl: "http://qt.test",
+      fetch: async (_url, init) => {
+        for (const file of (init?.body as FormData).getAll("files") as File[]) {
+          uploaded[file.name] = await file.text();
+        }
+        return json({ findings: [], limitations: [], errors: [] });
+      },
+    });
+    await engine.scan([path.join(root, "pkg", "a.py")], root, trace);
+    expect(uploaded).toEqual({
+      "pkg/a.py": "import hashlib\n",
+      ".quantumtrace/trace.jsonl": '{"kind":"run"}\n',
+    });
+    // a folder scan does not pick the trace up by itself: only source files are walked
+    for (const name of Object.keys(uploaded)) delete uploaded[name];
+    await engine.scan([root], root);
+    expect(Object.keys(uploaded)).toEqual(["pkg/a.py"]);
   });
 
   it("never uploads unsaved text", async () => {

@@ -1,8 +1,8 @@
 {
   "name": "quantumtrace-vscode",
   "displayName": "QuantumTrace",
-  "description": "Highlights quantum-vulnerable cryptography in Python, Java and Go, explains the risk and says what to migrate to.",
-  "version": "0.7.0",
+  "description": "Highlights quantum-vulnerable cryptography in Python, Java and Go, explains the risk, says what to migrate to, and shows which of it your tests really run.",
+  "version": "0.8.0",
   "private": true,
   "publisher": "quantumtrace",
   "repository": {
@@ -29,7 +29,9 @@
       "restrictedConfigurations": [
         "quantumtrace.backend",
         "quantumtrace.cli.command",
-        "quantumtrace.api.url"
+        "quantumtrace.api.url",
+        "quantumtrace.trace.command",
+        "quantumtrace.trace.debugSessions"
       ]
     }
   },
@@ -43,6 +45,16 @@
       {
         "command": "quantumtrace.scanWorkspace",
         "title": "Scan workspace",
+        "category": "QuantumTrace"
+      },
+      {
+        "command": "quantumtrace.traceRun",
+        "title": "Run tests with the runtime tracer",
+        "category": "QuantumTrace"
+      },
+      {
+        "command": "quantumtrace.traceClear",
+        "title": "Clear the runtime trace",
         "category": "QuantumTrace"
       },
       {
@@ -76,6 +88,11 @@
         "command": "quantumtrace.fix",
         "title": "Fix with AI",
         "category": "QuantumTrace"
+      },
+      {
+        "command": "quantumtrace.explain",
+        "title": "Explain this finding",
+        "category": "QuantumTrace"
       }
     ],
     "menus": {
@@ -94,6 +111,10 @@
         },
         {
           "command": "quantumtrace.revealDismissed",
+          "when": "false"
+        },
+        {
+          "command": "quantumtrace.explain",
           "when": "false"
         }
       ],
@@ -195,6 +216,36 @@
           "highContrast": "#9aa5b255",
           "highContrastLight": "#6b768540"
         }
+      },
+      {
+        "id": "quantumtrace.criticalIdleLineBackground",
+        "description": "Background of lines with Shor-vulnerable (critical) findings that the last traced run of the tests never reached.",
+        "defaults": {
+          "dark": "#f0577f14",
+          "light": "#b3123f14",
+          "highContrast": "#f0577f26",
+          "highContrastLight": "#b3123f1f"
+        }
+      },
+      {
+        "id": "quantumtrace.mediumIdleLineBackground",
+        "description": "Background of lines with Grover-weakened (medium) findings that the last traced run of the tests never reached.",
+        "defaults": {
+          "dark": "#e0a83c14",
+          "light": "#9a6a1214",
+          "highContrast": "#e0a83c26",
+          "highContrastLight": "#9a6a121f"
+        }
+      },
+      {
+        "id": "quantumtrace.unknownIdleLineBackground",
+        "description": "Background of lines with algorithms QuantumTrace has no rule for that the last traced run of the tests never reached.",
+        "defaults": {
+          "dark": "#9aa5b214",
+          "light": "#6b768514",
+          "highContrast": "#9aa5b226",
+          "highContrastLight": "#6b76851f"
+        }
       }
     ],
     "configuration": {
@@ -240,6 +291,23 @@
           "default": true,
           "markdownDescription": "Scan a file again a moment after you stop typing, without saving it. Only the local QuantumTrace CLI does this, so unsaved text never leaves this machine; through the API, files are scanned when saved. Has no effect when `quantumtrace.scanOnSave` is off."
         },
+        "quantumtrace.trace.command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "python",
+            "-m",
+            "pytest"
+          ],
+          "markdownDescription": "The command **QuantumTrace: Run tests with the runtime tracer** runs in the workspace folder, one item per argument. It must start Python 3.12 or newer. A leading `python` becomes the interpreter the Python extension has selected, if that extension is installed."
+        },
+        "quantumtrace.trace.debugSessions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also trace the Python debug sessions you start in VS Code, so a debug run shows what it executed too."
+        },
         "quantumtrace.style": {
           "type": "string",
           "enum": [
@@ -276,13 +344,23 @@
           "default": true,
           "description": "Show a few words after each marked line saying what is wrong with it."
         },
+        "quantumtrace.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "After a traced run, show above each marked line that ran how often it ran and in which test."
+        },
         "quantumtrace.aiFix": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Offer **Fix with AI** on each finding. It asks before sending anything: the file goes to the QuantumTrace API (`quantumtrace.api.url`) and the lines around the finding to the API's AI model."
         }
       }
-    }
+    },
+    "taskDefinitions": [
+      {
+        "type": "quantumtrace"
+      }
+    ]
   },
   "scripts": {
     "build": "node build.mjs",

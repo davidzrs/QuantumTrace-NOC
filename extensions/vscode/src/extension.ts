@@ -1,5 +1,6 @@
 /** VS Code wiring: scan with the engine, underline the findings, explain, fix and dismiss them. */
-import { readFile } from "node:fs/promises";
+import { existsSync, rmSync, statSync } from "node:fs";
+import { readFile, rm } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Finding, FixSuggestion } from "@quantumtrace/sdk";
@@ -15,9 +16,18 @@ import {
   EngineError,
   type Scan,
 } from "./engine";
-import { commandLink, explanation, headline, inlineHint, label, type Tone } from "./explain";
+import {
+  commandLink,
+  explanation,
+  headline,
+  inlineHint,
+  label,
+  lensTitle,
+  type Tone,
+} from "./explain";
 import { EarlierPlaceError, linesLabel, replacement, report, requestFix } from "./fix";
 import { MarkHistory } from "./history";
+import { findProgram, sameFile, traceFile, tracerEnvironment } from "./runtime";
 import {
   applyEdits,
   mostSevereFirst,
@@ -29,6 +39,7 @@ import {
 const SOURCE = "QuantumTrace";
 const DISMISS = "quantumtrace.dismiss";
 const FIX = "quantumtrace.fix";
+const EXPLAIN = "quantumtrace.explain";
 const API_KEY_SECRET = "quantumtrace.apiKey";
 const EXTENSIONS = new Set([".py", ".java", ".go"]);
 /** How long the typing must pause before the file is scanned again, in milliseconds. */
@@ -77,11 +88,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const settling = new Map<string, ReturnType<typeof setTimeout>>();
   let lastFailure = "";
 
-  const lineStyle = (tier: string, ruler: string) =>
+  const lineStyle = (tier: string, ruler: string, quiet = false) =>
     vscode.window.createTextEditorDecorationType({
       isWholeLine: true,
-      backgroundColor: new vscode.ThemeColor(`quantumtrace.${tier}LineBackground`),
-      overviewRulerColor: new vscode.ThemeColor(ruler),
+      backgroundColor: new vscode.ThemeColor(
+        `quantumtrace.${tier}${quiet ? "Idle" : ""}LineBackground`,
+      ),
+      overviewRulerColor: quiet ? undefined : new vscode.ThemeColor(ruler),
       overviewRulerLane: vscode.OverviewRulerLane.Right,
     });
   /** Whole-line colours by severity, for the "highlight" style. */
@@ -90,6 +103,18 @@ export function activate(context: vscode.ExtensionContext): void {
     [vscode.DiagnosticSeverity.Warning, lineStyle("medium", "editorOverviewRuler.warningForeground")],
     [vscode.DiagnosticSeverity.Information, lineStyle("unknown", "editorOverviewRuler.infoForeground")],
   ];
+  /** The same colours, fainter: lines a traced run of the tests never reached. */
+  const idleStyles: [vscode.DiagnosticSeverity, vscode.TextEditorDecorationType][] = [
+    [vscode.DiagnosticSeverity.Error, lineStyle("critical", "", true)],
+    [vscode.DiagnosticSeverity.Warning, lineStyle("medium", "", true)],
+    [vscode.DiagnosticSeverity.Information, lineStyle("unknown", "", true)],
+  ];
+  /** Tells VS Code the words above the lines that ran have changed. */
+  const lensesChanged = new vscode.EventEmitter<void>();
+  /** Where the tracer that ships with the extension lives: it goes on the traced run's PYTHONPATH. */
+  const tracerFolder = path.join(context.extensionPath, "tracer", "python");
+  /** The traced run in progress, if any: its task and the folder it runs in. */
+  let tracing: { execution: vscode.TaskExecution; root: string; command: string } | undefined;
   const hintStyle = (tier: string) =>
     vscode.window.createTextEditorDecorationType({
       after: {
@@ -156,31 +181,63 @@ export function activate(context: vscode.ExtensionContext): void {
     const byLine = new Map<number, Occurrence[]>();
     for (const o of mostSevereFirst(items)) byLine.set(o.line, [...(byLine.get(o.line) ?? []), o]);
     const levelOf = (onLine: Occurrence[]) => Math.min(...onLine.map((o) => severity(o.finding)));
+    // a traced run of the tests reached none of the findings on the line: it is drawn fainter
+    const idle = (onLine: Occurrence[]) => onLine.every((o) => o.execution?.ran === false);
     const hinted = setting("inlineHint", true);
 
     for (const editor of vscode.window.visibleTextEditors) {
       const { document } = editor;
       if (document.uri.toString() !== uri.toString()) continue;
       const lines = [...byLine].filter(([line]) => line < document.lineCount);
-      for (const [level, style] of lineStyles) {
-        const coloured = underline ? [] : lines.filter(([, onLine]) => levelOf(onLine) === level);
-        editor.setDecorations(
-          style,
-          coloured.map(([line]) => new vscode.Range(line, 0, line, 0)),
-        );
-      }
+      const draw = (styles: typeof lineStyles, faint: boolean) => {
+        for (const [level, style] of styles) {
+          const coloured = underline
+            ? []
+            : lines.filter(([, onLine]) => levelOf(onLine) === level && idle(onLine) === faint);
+          editor.setDecorations(
+            style,
+            coloured.map(([line]) => new vscode.Range(line, 0, line, 0)),
+          );
+        }
+      };
+      draw(lineStyles, false);
+      draw(idleStyles, true);
       for (const [level, style] of hintStyles) {
         const worded = hinted ? lines.filter(([, onLine]) => levelOf(onLine) === level) : [];
         editor.setDecorations(
           style,
           worded.map(([line, onLine]) => {
             const end = document.lineAt(line).range.end;
-            const contentText = inlineHint(onLine.map((o) => o.finding));
+            const contentText = inlineHint(onLine.map((o) => o.finding), idle(onLine));
             return { range: new vscode.Range(end, end), renderOptions: { after: { contentText } } };
           }),
         );
       }
     }
+    lensesChanged.fire();
+  }
+
+  /** Above each line a traced run reached: what ran there, how often and in which test. */
+  function provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    if (!setting("codeLens", true)) return [];
+    return mostSevereFirst(shown(document.uri)).flatMap((o) => {
+      if (!o.execution?.ran || o.line >= document.lineCount) return [];
+      return new vscode.CodeLens(new vscode.Range(o.line, 0, o.line, 0), {
+        title: lensTitle(o.finding, o.execution),
+        tooltip: "Seen by the QuantumTrace tracer in the last traced run. Click for the explanation.",
+        command: EXPLAIN,
+        arguments: [document.uri.toString(), o.line],
+      });
+    });
+  }
+
+  /** Opens the pop-up of a marked line (the words above a line that ran lead here). */
+  async function explain(uriText: string, line: number): Promise<void> {
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uriText));
+    if (line >= document.lineCount) return;
+    const at = new vscode.Position(line, document.lineAt(line).firstNonWhitespaceCharacterIndex);
+    await vscode.window.showTextDocument(document, { selection: new vscode.Range(at, at) });
+    await vscode.commands.executeCommand("editor.action.showHover");
   }
 
   function renderAll(): void {
@@ -269,7 +326,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // a saved file is scanned where it is; unsaved edits only where the text stays local
       const scan = document.isDirty
         ? await scanner.scanText(text, uri.fsPath, root)
-        : await scanner.scan([uri.fsPath], root);
+        : await scanner.scan([uri.fsPath], root, traceOf(root));
       if (!scan) {
         say("Save the file, then scan again: unsaved edits are only scanned by the local QuantumTrace CLI.");
         return;
@@ -279,7 +336,11 @@ export function activate(context: vscode.ExtensionContext): void {
       if (document.version !== version) return; // edited meanwhile; the next pause or save rescans
       const lineAt = (line: number) =>
         line < document.lineCount ? document.lineAt(line).text : undefined;
-      const marks = occurrences(scan.findings, lineAt);
+      // a trace speaks of every file it saw run: only this file's findings belong on its lines
+      const here = scan.findings.filter(
+        (f) => f.asset.evidence.source_type === "code" && sameFile(f.asset.evidence.location, uri.fsPath),
+      );
+      const marks = occurrences(here, lineAt);
       found.set(uri.toString(), marks);
       history.remember(uri.toString(), text, marks);
       render(uri);
@@ -289,7 +350,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   }
 
-  async function scanWorkspace(): Promise<void> {
+  /** The trace of the folder's last traced run, if it has one: scans read it with the code. */
+  const traceOf = (root: string) => (existsSync(traceFile(root)) ? traceFile(root) : undefined);
+
+  async function scanWorkspace(report: () => void = summarise): Promise<void> {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (!folders.length) {
       void vscode.window.showInformationMessage("Open a folder, then scan it with QuantumTrace.");
@@ -306,7 +370,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const byFile = new Map<string, Finding[]>();
         for (const folder of folders) {
           const root = folder.uri.fsPath;
-          const scan = await scanner.scan([root], root);
+          const scan = await scanner.scan([root], root, traceOf(root));
           logNotes(scan);
           for (const finding of scan.findings) {
             const { source_type, location } = finding.asset.evidence;
@@ -328,11 +392,169 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.workspace.textDocuments.forEach(seed);
         // files that had findings before and have none now must be cleared too
         for (const key of new Set([...before, ...found.keys()])) render(vscode.Uri.parse(key));
-        summarise();
+        report();
       } catch (error) {
         failed(error);
       }
     });
+  }
+
+  /** "In use": runs the project's tests with the tracer, then scans, so every marked line says
+   * whether it really ran and with what. The command is the user's own, from their settings. */
+  async function traceRun(): Promise<void> {
+    const active = vscode.window.activeTextEditor?.document.uri;
+    const folder =
+      (active && vscode.workspace.getWorkspaceFolder(active)) ?? vscode.workspace.workspaceFolders?.[0];
+    if (!folder) {
+      void vscode.window.showInformationMessage("Open a folder, then run its tests with QuantumTrace.");
+      return;
+    }
+    if (!vscode.workspace.isTrusted) {
+      void vscode.window.showWarningMessage(
+        "A traced run executes this folder's tests. Trust the folder first, then run it again.",
+      );
+      return;
+    }
+    if (tracing) {
+      const again = await vscode.window.showInformationMessage(
+        `QuantumTrace is still tracing "${tracing.command}".`,
+        "Stop it and start again",
+      );
+      if (!again) return;
+      tracing?.execution.terminate();
+      tracing = undefined;
+    }
+    const [program, ...args] = setting<string[]>("trace.command", ["python", "-m", "pytest"]);
+    const root = folder.uri.fsPath;
+    const chosen = program === "python" ? await selectedPython(folder) : undefined;
+    const interpreter =
+      chosen ?? (program && findProgram(program, process.env, (file) => isFile(file, root)));
+    if (!program || !interpreter) {
+      // found out here: a terminal that cannot start its program just sits there
+      const choice = await vscode.window.showErrorMessage(
+        program
+          ? `Can't find "${program}" to run the tests. Set quantumtrace.trace.command to the command that runs them, with a full path if needed.`
+          : "The setting quantumtrace.trace.command is empty. Set it to the command that runs your tests.",
+        "Open settings",
+      );
+      if (choice) {
+        void vscode.commands.executeCommand("workbench.action.openSettings", "quantumtrace.trace");
+      }
+      return;
+    }
+    const out = traceFile(root);
+    // a trace is one run: what an earlier run saw would describe code that may have changed
+    await rm(out, { force: true });
+    const task = new vscode.Task(
+      { type: "quantumtrace" },
+      folder,
+      "Traced run",
+      SOURCE,
+      new vscode.ProcessExecution(interpreter, args, {
+        cwd: root,
+        env: tracerEnvironment(tracerFolder, root, out, process.env),
+      }),
+      [],
+    );
+    task.presentationOptions = {
+      reveal: vscode.TaskRevealKind.Always,
+      panel: vscode.TaskPanelKind.Dedicated,
+      clear: true,
+    };
+    const command = [path.basename(program), ...args].join(" ");
+    tracing = { execution: await vscode.tasks.executeTask(task), root, command };
+  }
+
+  /** Whether a program path, taken from the folder the run starts in, is a file. */
+  function isFile(file: string, root: string): boolean {
+    try {
+      return statSync(path.resolve(root, file)).isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  /** The interpreter the Python extension uses for this folder, so the tests run in the same
+   * environment as when the user runs them. Undefined when that extension is not there. */
+  async function selectedPython(folder: vscode.WorkspaceFolder): Promise<string | undefined> {
+    try {
+      const python = vscode.extensions.getExtension<{
+        environments?: { getActiveEnvironmentPath?: (uri: vscode.Uri) => { path?: string } };
+      }>("ms-python.python");
+      const api = python && (python.isActive ? python.exports : await python.activate());
+      const found = api?.environments?.getActiveEnvironmentPath?.(folder.uri)?.path;
+      return found && path.isAbsolute(found) ? found : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Forgets the last traced run: its trace is deleted, and the marks go back to what the code
+   * alone says, with nothing about what ran. */
+  async function traceClear(): Promise<void> {
+    const traces = (vscode.workspace.workspaceFolders ?? [])
+      .map((folder) => traceFile(folder.uri.fsPath))
+      .filter((trace) => existsSync(trace));
+    if (!traces.length) {
+      void vscode.window.showInformationMessage("There is no runtime trace to clear.");
+      return;
+    }
+    for (const trace of traces) await rm(trace, { force: true });
+    await scanWorkspace(() => {
+      void vscode.window.showInformationMessage(
+        "Runtime trace cleared. Run the tests with the tracer to record a new one.",
+      );
+    });
+  }
+
+  function endTrace(execution: vscode.TaskExecution, exitCode: number | undefined): void {
+    if (execution !== tracing?.execution) return;
+    const { root, command } = tracing;
+    tracing = undefined;
+    void traced(root, command, exitCode);
+  }
+
+  /** After a traced run: scan again with the trace, and say what it showed. */
+  async function traced(root: string, command: string, exitCode: number | undefined): Promise<void> {
+    if (!existsSync(traceFile(root))) {
+      const choice = await vscode.window.showWarningMessage(
+        `"${command}" wrote no trace. The tracer follows Python 3.12 or newer: check that quantumtrace.trace.command starts it.`,
+        "Open settings",
+      );
+      if (choice) {
+        void vscode.commands.executeCommand("workbench.action.openSettings", "quantumtrace.trace");
+      }
+      return;
+    }
+    await scanWorkspace(() => {
+      const all = [...found.keys()].flatMap((key) => shown(vscode.Uri.parse(key)));
+      const ran = all.filter((o) => o.execution?.ran).length;
+      const idle = all.filter((o) => o.execution?.ran === false).length;
+      const failedRun = exitCode ? ` The command ended with exit code ${exitCode}.` : "";
+      void vscode.window.showInformationMessage(
+        ran + idle
+          ? `QuantumTrace traced "${command}": ${plural(ran, "marked place")} ran, ${idle} did not.${failedRun}`
+          : `QuantumTrace traced "${command}", and it reached no Python file with findings.${failedRun}`,
+      );
+    });
+  }
+
+  /** With quantumtrace.trace.debugSessions on, Python debug sessions started here are traced
+   * too: the same tracer, added to the session's environment. */
+  function traceDebugSession(
+    folder: vscode.WorkspaceFolder | undefined,
+    config: vscode.DebugConfiguration,
+  ): vscode.DebugConfiguration {
+    const python = config.type === "python" || config.type === "debugpy";
+    if (!folder || !python || config.request !== "launch" || !setting("trace.debugSessions", false)) {
+      return config;
+    }
+    const root = folder.uri.fsPath;
+    const out = traceFile(root);
+    rmSync(out, { force: true });
+    const own = (config.env ?? {}) as Record<string, string | undefined>;
+    const base = { PYTHONPATH: own.PYTHONPATH ?? process.env.PYTHONPATH };
+    return { ...config, env: { ...own, ...tracerEnvironment(tracerFolder, root, out, base) } };
   }
 
   function summarise(): void {
@@ -429,6 +651,7 @@ export function activate(context: vscode.ExtensionContext): void {
         tone: TONES[severity(o.finding)],
         withRationale: wholeLine,
         fixLink: withFix ? commandLink(FIX, args) : undefined,
+        execution: o.execution,
       });
     });
     const markdown = new vscode.MarkdownString(sections.join("\n\n---\n\n"));
@@ -801,6 +1024,26 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("quantumtrace.setApiKey", setApiKey),
     vscode.commands.registerCommand(DISMISS, dismiss),
     vscode.commands.registerCommand(FIX, fix),
+    ...idleStyles.map(([, style]) => style),
+    lensesChanged,
+    vscode.languages.registerCodeLensProvider(SELECTOR, {
+      onDidChangeCodeLenses: lensesChanged.event,
+      provideCodeLenses,
+    }),
+    vscode.commands.registerCommand(EXPLAIN, explain),
+    vscode.commands.registerCommand("quantumtrace.traceRun", traceRun),
+    vscode.commands.registerCommand("quantumtrace.traceClear", traceClear),
+    vscode.tasks.onDidEndTaskProcess((event) => endTrace(event.execution, event.exitCode)),
+    // a command that could not even start has no process to end: the task still does
+    vscode.tasks.onDidEndTask((event) => endTrace(event.execution, undefined)),
+    vscode.debug.registerDebugConfigurationProvider("*", {
+      resolveDebugConfigurationWithSubstitutedVariables: traceDebugSession,
+    }),
+    vscode.debug.onDidTerminateDebugSession((session) => {
+      const env = session.configuration.env as Record<string, string> | undefined;
+      const root = session.workspaceFolder?.uri.fsPath;
+      if (root && env?.QT_TRACE_FILE) void traced(root, `debug: ${session.name}`, undefined);
+    }),
   );
 
   refreshDismissed();

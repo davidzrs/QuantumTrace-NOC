@@ -18,7 +18,7 @@ function finding(n: number, tier: RiskTier = "critical"): Finding {
       confidence: "high",
       exposure: "internet",
       flags: [],
-      evidence: { source_type: "cloud", location: `arn:${n}`, line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
+      evidence: { source_type: "cloud", location: `arn:${n}`, line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {}, execution: null },
       more_evidence: [],
       library: null,
     },

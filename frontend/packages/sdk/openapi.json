@@ -1073,6 +1073,17 @@
             },
             "type": "object",
             "title": "Context"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Execution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a runtime trace saw here; absent when no trace covers this place"
           }
         },
         "type": "object",
@@ -1084,10 +1095,77 @@
           "end_column",
           "snippet",
           "snippet_start_line",
-          "context"
+          "context",
+          "execution"
         ],
         "title": "Evidence",
         "description": "Where an asset was observed. Enough to trace a finding back to its origin."
+      },
+      "Execution": {
+        "properties": {
+          "ran": {
+            "type": "boolean",
+            "title": "Ran",
+            "description": "Whether the line ran during the traced run"
+          },
+          "calls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calls",
+            "description": "Times the cryptographic call itself was seen; absent when the tracer only knows that the line ran"
+          },
+          "tests": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tests",
+            "description": "Tests that ran it, the ones with most calls first; at most five"
+          },
+          "test_count": {
+            "type": "integer",
+            "title": "Test Count",
+            "description": "How many tests ran it in all",
+            "default": 0
+          },
+          "parameters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Parameters",
+            "description": "What the call really used: key_size, curve, mode, hash, library, via"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run",
+            "description": "The traced command, e.g. `python -m pytest`"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ran",
+          "calls",
+          "tests",
+          "test_count",
+          "parameters",
+          "run"
+        ],
+        "title": "Execution",
+        "description": "What a runtime trace saw at one place in the code (the tests or a debug session, run\nwith a QuantumTrace tracer). It never holds keys or data: only names, sizes and counts."
       },
       "Exposure": {
         "type": "string",
@@ -1258,6 +1336,7 @@
         "type": "string",
         "enum": [
           "negotiated",
+          "executed",
           "configured",
           "in-code",
           "permitted",

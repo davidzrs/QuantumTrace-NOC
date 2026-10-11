@@ -20,7 +20,7 @@ const f = (
     confidence: "high",
     exposure,
     flags: [],
-    evidence: { source_type: "cloud", location, line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
+    evidence: { source_type: "cloud", location, line: null, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {}, execution: null },
     more_evidence: [],
     library: null,
   },

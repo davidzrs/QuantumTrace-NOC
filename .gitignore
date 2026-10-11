@@ -36,3 +36,9 @@ reports/
 .wxt/
 web-ext.config.ts
 frontend/apps/web/public/extension/
+
+# The Python tracer, copied from backend/src/quantumtrace/tracers at build time
+extensions/vscode/tracer/
+
+# Runtime traces written by a traced test run
+.quantumtrace/

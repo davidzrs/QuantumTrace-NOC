@@ -17,7 +17,7 @@ function finding(n: number, tier: RiskTier, source: Source = "code", broken = fa
       confidence: "high",
       exposure: "internal",
       flags: [],
-      evidence: { source_type: source, location: `src/file${n}.py`, line: n, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {} },
+      evidence: { source_type: source, location: `src/file${n}.py`, line: n, column: null, end_column: null, snippet: null, snippet_start_line: null, context: {}, execution: null },
       more_evidence: [],
       library: null,
     },

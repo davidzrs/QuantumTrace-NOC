@@ -373,6 +373,48 @@ export interface components {
             context: {
                 [key: string]: string;
             };
+            /** @description What a runtime trace saw here; absent when no trace covers this place */
+            execution: components["schemas"]["Execution"] | null;
+        };
+        /**
+         * Execution
+         * @description What a runtime trace saw at one place in the code (the tests or a debug session, run
+         *     with a QuantumTrace tracer). It never holds keys or data: only names, sizes and counts.
+         */
+        Execution: {
+            /**
+             * Ran
+             * @description Whether the line ran during the traced run
+             */
+            ran: boolean;
+            /**
+             * Calls
+             * @description Times the cryptographic call itself was seen; absent when the tracer only knows that the line ran
+             */
+            calls: number | null;
+            /**
+             * Tests
+             * @description Tests that ran it, the ones with most calls first; at most five
+             */
+            tests: string[];
+            /**
+             * Test Count
+             * @description How many tests ran it in all
+             * @default 0
+             */
+            test_count: number;
+            /**
+             * Parameters
+             * @description What the call really used: key_size, curve, mode, hash, library, via
+             */
+            parameters: {
+                [key: string]: string;
+            };
+            /**
+             * Run
+             * @description The traced command, e.g. `python -m pytest`
+             */
+            run: string | null;
         };
         /**
          * Exposure
@@ -466,7 +508,7 @@ export interface components {
          * @description How strongly the input proves the primitive is in use.
          * @enum {string}
          */
-        Observation: "negotiated" | "configured" | "in-code" | "permitted" | "offered";
+        Observation: "negotiated" | "executed" | "configured" | "in-code" | "permitted" | "offered";
         /**
          * Primitive
          * @enum {string}

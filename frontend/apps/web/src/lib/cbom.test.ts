@@ -26,6 +26,7 @@ function tlsFinding(usage: string, algorithm: string): Finding {
         end_column: null,
         snippet: null,
         snippet_start_line: null,
+        execution: null,
         context: { packet: "12" },
       },
       more_evidence: [],

@@ -1,5 +1,5 @@
 /** Turns engine findings into underlined places in a file, and keeps them in place while typing. */
-import type { Finding } from "@quantumtrace/sdk";
+import type { Execution, Finding } from "@quantumtrace/sdk";
 
 /** One underlined place. A finding has several when the engine merged repeats within a file. */
 export interface Occurrence {
@@ -10,6 +10,8 @@ export interface Occurrence {
   end: number;
   /** Identity that survives line shifts, used to remember a dismissal. */
   key: string;
+  /** What a traced run saw at this place; null when no trace covers it. */
+  execution: Execution | null;
 }
 
 /** A text change, positioned against the document as it was before the change. */
@@ -38,7 +40,8 @@ export function occurrences(
       const text = lineAt(place.line);
       if (text === undefined) continue;
       const [start, end] = span(text, observed, place.column);
-      out.push({ finding, line: place.line, start, end, key: occurrenceKey(finding, text) });
+      const key = occurrenceKey(finding, text);
+      out.push({ finding, line: place.line, start, end, key, execution: place.execution });
     }
   }
   return out;
@@ -58,16 +61,23 @@ export function mostSevereFirst(items: readonly Occurrence[]): Occurrence[] {
   return [...items].sort((a, b) => rank(a) - rank(b));
 }
 
+interface Place {
+  line: number;
+  column: number | null;
+  execution: Execution | null;
+}
+
 /** The engine reports the first hit in `evidence` and repeats in the file in `more_evidence`,
  * one-based. Returned zero-based, one place per line. */
-function reportedPlaces(finding: Finding): { line: number; column: number | null }[] {
+function reportedPlaces(finding: Finding): Place[] {
   const seen = new Set<number>();
-  const places: { line: number; column: number | null }[] = [];
+  const places: Place[] = [];
   for (const e of [finding.asset.evidence, ...finding.asset.more_evidence]) {
     if (e.source_type !== "code" || e.line === null || !Number.isInteger(e.line) || e.line < 1) continue;
     if (seen.has(e.line)) continue;
     seen.add(e.line);
-    places.push({ line: e.line - 1, column: e.column !== null && e.column > 0 ? e.column - 1 : null });
+    const column = e.column !== null && e.column > 0 ? e.column - 1 : null;
+    places.push({ line: e.line - 1, column, execution: e.execution ?? null });
   }
   return places;
 }

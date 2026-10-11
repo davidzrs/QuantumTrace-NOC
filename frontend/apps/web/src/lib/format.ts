@@ -7,6 +7,7 @@ export type Source = Evidence["source_type"];
 
 const OBSERVATION_LABELS: Record<string, string> = {
   negotiated: "Negotiated on the wire",
+  executed: "Seen running",
   configured: "Configured",
   "in-code": "Found in code",
   permitted: "Permitted by policy, not proven used",
@@ -22,6 +23,21 @@ const CONFIDENCE_LABELS: Record<string, string> = {
 };
 
 export const confidenceLabel = (c: string) => CONFIDENCE_LABELS[c] ?? c;
+
+/**
+ * What a runtime trace saw at one place, in a sentence: "Ran 14 times in 2 tests (key size
+ * 1024)". Undefined when no trace covers the place.
+ */
+export function runtimeNote(execution: Evidence["execution"]): string | undefined {
+  if (!execution) return undefined;
+  const during = execution.run ? ` during ${execution.run}` : "";
+  if (!execution.ran) return `Did not run${during}`;
+  const times = execution.calls === null ? "Ran" : `Ran ${plural(execution.calls, "time")}`;
+  const tests = execution.test_count ? ` in ${plural(execution.test_count, "test")}` : during;
+  const { key_size: size, mode, via } = execution.parameters;
+  const used = [size && `key size ${size}`, mode && `${mode} mode`, via && `through ${via}`].filter(Boolean);
+  return `${times}${tests}${used.length ? ` (${used.join(", ")})` : ""}`;
+}
 
 export const EXPOSURE_LABEL: Record<string, string> = {
   internet: "Internet",

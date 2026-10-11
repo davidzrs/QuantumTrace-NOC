@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { commandLink, explanation, headline, inlineHint, label } from "./explain";
+import {
+  commandLink,
+  explanation,
+  headline,
+  inlineHint,
+  label,
+  lensTitle,
+  ranSummary,
+  testName,
+} from "./explain";
 import { finding, md5 } from "./fixtures";
 
 const LINK = "command:quantumtrace.dismiss?x";
@@ -54,6 +63,91 @@ describe("inlineHint", () => {
     const hint = inlineHint([long, md5]);
     expect(hint.length).toBeLessThanOrEqual(72);
     expect(hint).toMatch(/^X+…: broken by Shor's algorithm \(\+1 more\)$/);
+  });
+});
+
+type Execution = NonNullable<ReturnType<typeof finding>["asset"]["evidence"]["execution"]>;
+
+const ran = (over: Partial<Execution> = {}): Execution => ({
+  ran: true,
+  calls: 14,
+  tests: ["tests/test_auth.py::TestAuth::test_login", "tests/test_auth.py::test_logout"],
+  test_count: 2,
+  parameters: { api: "rsa.sign", key_size: "1024" },
+  run: "python -m pytest",
+  ...over,
+});
+
+describe("what a traced run saw", () => {
+  it("names a test by its last part, pytest or unittest style", () => {
+    expect(testName("tests/test_auth.py::TestAuth::test_login")).toBe("test_login");
+    expect(testName("tests.test_auth.TestAuth.test_login")).toBe("test_login");
+    expect(testName("test_login")).toBe("test_login");
+  });
+
+  it("says how often a line ran and in which test", () => {
+    expect(ranSummary(ran())).toBe("ran 14× in test_login and 1 more test");
+    expect(ranSummary(ran({ tests: ["t::test_a"], test_count: 1 }))).toBe("ran 14× in test_a");
+    expect(ranSummary(ran({ test_count: 4 }))).toBe("ran 14× in test_login and 3 more tests");
+  });
+
+  it("names the command when no test ran it, and leaves out a count the tracer does not have", () => {
+    expect(ranSummary(ran({ tests: [], test_count: 0, run: "python app.py" }))).toBe(
+      "ran 14× during python app.py",
+    );
+    expect(ranSummary(ran({ calls: null, tests: ["t::test_a"], test_count: 1 }))).toBe("ran in test_a");
+    expect(ranSummary(ran({ calls: null, tests: [], test_count: 0, run: null }))).toBe("ran");
+    expect(ranSummary(ran({ ran: false }))).toBe("did not run");
+  });
+
+  it("heads the line with the finding: the words above a line that ran", () => {
+    expect(lensTitle(finding(), ran())).toBe("RSA-1024 · ran 14× in test_login and 1 more test");
+  });
+
+  it("adds to a line's few words that the run never reached it", () => {
+    expect(inlineHint([md5], true)).toBe("MD5: weakened by Grover's algorithm · did not run");
+    const long = finding({ asset: { variant: "X".repeat(200) } });
+    const hint = inlineHint([long, md5], true);
+    expect(hint.length).toBeLessThanOrEqual(72);
+    expect(hint).toMatch(/: broken by Shor's algorithm \(\+1 more\) · did not run$/);
+  });
+
+  it("says in the pop-up how it ran: times, tests, and what the call really used", () => {
+    const text = explanation(finding(), LINK, { execution: ran() });
+    expect(text).toContain(
+      "$(play)&nbsp; **Seen running** 14× in `test_login`, `test_logout` · key size 1024",
+    );
+    const through = explanation(finding(), LINK, {
+      execution: ran({
+        tests: ["a::t1"],
+        test_count: 7,
+        parameters: { via: "jwt", mode: "ECB", curve: "secp256r1" },
+      }),
+    });
+    expect(through).toContain("in `t1` and 6 more · secp256r1 · ECB mode · through jwt");
+  });
+
+  it("says in the pop-up that it did not run, and during which command", () => {
+    const idle = ran({ ran: false, calls: null, tests: [], test_count: 0 });
+    expect(explanation(md5, LINK, { execution: idle })).toContain(
+      "$(circle-slash)&nbsp; **Did not run** during `python -m pytest`",
+    );
+    expect(explanation(md5, LINK)).not.toContain("Did not run");
+    expect(explanation(md5, LINK, { execution: null })).not.toContain("Seen running");
+  });
+
+  it("keeps test names and commands from the trace from becoming links or tags", () => {
+    const hostile = ran({
+      tests: ["t::test_[x](command:evil)`<img>"],
+      test_count: 1,
+      run: "py `x` [y](z)",
+    });
+    expect(explanation(finding(), LINK, { execution: hostile })).toContain(
+      "in `test_x(command:evil)img`",
+    );
+    expect(explanation(finding(), LINK, { execution: { ...hostile, ran: false } })).toContain(
+      "during `py x y(z)`",
+    );
   });
 });
 
