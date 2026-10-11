@@ -428,3 +428,22 @@ def test_a_key_literal_is_still_a_hardcoded_key(tmp_path: Path, name: str) -> No
     [aes] = scan_source(tmp_path, "export.py", code).findings
     assert "hardcoded-key" in aes.asset.flags and aes.asset.key_size == 128
     assert aes.classification.classically_broken
+
+
+def test_python_ed448_and_ed25519_signatures_keep_their_own_algorithm(tmp_path: Path) -> None:
+    code = """from cryptography.hazmat.primitives.asymmetric import ed25519, ed448
+
+primary_key = ed25519.Ed25519PrivateKey.generate()
+partner_key = ed448.Ed448PrivateKey.generate()
+
+def sign_primary(payload):
+    return primary_key.sign(payload)
+
+def sign_partner(payload):
+    return partner_key.sign(payload,)
+"""
+    findings = scan_source(tmp_path, "signatures.py", code).findings
+    signed = {
+        f.asset.evidence.line: f.asset.variant for f in findings if f.asset.usage == "signature"
+    }
+    assert signed == {7: "Ed25519", 10: "Ed448"}  # line 10 also has a trailing comma
