@@ -270,6 +270,21 @@ def test_hello_retry_request_is_skipped_for_the_real_server_hello(tmp_path: Path
     assert rules["tls-key-exchange"] == "x25519mlkem768"
 
 
+def test_hello_retry_request_alone_is_not_a_negotiation(tmp_path: Path) -> None:
+    # The client sends no key share (valid, RFC 8446 4.2.8) and the server asks for
+    # X25519MLKEM768, but the capture ends there: nothing was negotiated.
+    from quantumtrace.scanners.network.tls import HRR_RANDOM
+
+    groups = _ext(0x000A, _vec(X25519MLKEM768.to_bytes(2, "big") + b"\x00\x1d"))
+    hello = _hello(1, bytes(32), [0x1301], groups + TLS13 + _ext(0x0033, _vec(b"")))
+    hrr_exts = _ext(0x002B, b"\x03\x04") + _ext(0x0033, X25519MLKEM768.to_bytes(2, "big"))
+    hrr = _hello(2, HRR_RANDOM, [0x1301], hrr_exts)
+    result = _scan_session(tmp_path, _record(hello), _record(hrr))
+    [offer] = result.findings
+    assert offer.asset.observation is Observation.OFFERED
+    assert offer.asset.evidence.context["hrr_selected_group"] == "X25519MLKEM768"
+
+
 def test_dhe_chacha20_suite_reports_its_key_exchange(tmp_path: Path) -> None:
     hello = _hello(1, bytes(32), [0xCCAA, 0x002F], b"")
     sh = _hello(2, bytes(32), [0xCCAA], b"")
