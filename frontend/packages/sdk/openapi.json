@@ -938,7 +938,7 @@
           "ecosystem": {
             "type": "string",
             "title": "Ecosystem",
-            "description": "pypi, golang, maven, npm, or python/go/java for a stdlib"
+            "description": "pypi, golang, maven, or python/go/java for a stdlib"
           },
           "version": {
             "anyOf": [
@@ -950,7 +950,7 @@
               }
             ],
             "title": "Version",
-            "description": "As declared; None when unpinned"
+            "description": "As bundled; None when only code shows the library"
           },
           "purl": {
             "anyOf": [
@@ -962,7 +962,7 @@
               }
             ],
             "title": "Purl",
-            "description": "Package URL, for declared packages"
+            "description": "Package URL, for packages"
           },
           "note": {
             "anyOf": [
@@ -982,7 +982,7 @@
             },
             "type": "array",
             "title": "Evidence",
-            "description": "Where it is declared; empty when only code shows it"
+            "description": "Where a build bundles it; empty when only code shows it"
           }
         },
         "type": "object",
@@ -996,7 +996,7 @@
           "evidence"
         ],
         "title": "CryptoLibrary",
-        "description": "A cryptographic library the inputs declare (dependency manifest, bundled package) or that\ncode calls into (a standard library). Findings point at it through `CryptoAsset.library`."
+        "description": "A cryptographic library that code calls into, or that a build bundles (a jar's\npom.properties, a Go binary's build info). Findings point at it through\n`CryptoAsset.library`."
       },
       "Evidence": {
         "properties": {
@@ -1554,7 +1554,7 @@
             },
             "type": "array",
             "title": "Libraries",
-            "description": "Cryptographic libraries declared or called; the CBOM lists each as a library component that provides the algorithms its findings use"
+            "description": "Cryptographic libraries called or bundled; the CBOM lists each as a library component that provides the algorithms its findings use"
           }
         },
         "type": "object",

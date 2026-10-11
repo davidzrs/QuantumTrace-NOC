@@ -68,7 +68,7 @@ def _library_ref(lib: CryptoLibrary) -> str:
 
 
 def _library(lib: CryptoLibrary) -> dict[str, Any]:
-    """A library component: its version and purl when declared, the manifest lines as evidence."""
+    """A library component: its version and purl, and where a build bundles it as evidence."""
     component: dict[str, Any] = {"type": "library", "bom-ref": _library_ref(lib), "name": lib.name}
     if lib.version:
         component["version"] = lib.version
@@ -82,7 +82,7 @@ def _library(lib: CryptoLibrary) -> dict[str, Any]:
         ]}  # fmt: skip
     properties = [
         {"name": "quantumtrace:ecosystem", "value": lib.ecosystem},
-        {"name": "quantumtrace:declared", "value": str(bool(lib.evidence)).lower()},
+        {"name": "quantumtrace:bundled", "value": str(bool(lib.evidence)).lower()},
     ]
     if lib.note:
         properties.append({"name": "quantumtrace:note", "value": lib.note})
