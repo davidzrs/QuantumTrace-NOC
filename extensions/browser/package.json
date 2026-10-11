@@ -1,6 +1,6 @@
 {
   "name": "@quantumtrace/browser-extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Toolbar popup: is the site in this tab quantum-ready?",

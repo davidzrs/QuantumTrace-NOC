@@ -250,7 +250,7 @@
   }
 
   /* "Fix code with AI": a gradient border with a soft glow; solid gradient once picked or as the
-     action itself. Pairs with .btn for size, or stands alone as the chip on a flagged line. */
+     action itself. Pairs with .btn for size. */
   .btn-ai,
   .btn-ai:hover {
     border-color: transparent;
@@ -281,31 +281,6 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-  }
-  .ai-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    height: 22px;
-    padding: 0 9px;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background:
-      linear-gradient(var(--qt-surface), var(--qt-surface)) padding-box,
-      var(--qt-ai) border-box;
-    box-shadow: 0 0 14px -5px var(--qt-ai-glow);
-    font-family: var(--qt-font-sans);
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
-    cursor: pointer;
-    user-select: none;
-  }
-  .ai-chip:hover {
-    background:
-      linear-gradient(var(--qt-raise), var(--qt-raise)) padding-box,
-      var(--qt-ai) border-box;
   }
 }
 

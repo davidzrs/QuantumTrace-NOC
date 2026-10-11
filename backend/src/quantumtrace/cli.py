@@ -1,12 +1,15 @@
 """Command-line adapter: `quantumtrace scan <paths>`, `quantumtrace probe <host>` and
-`quantumtrace trace -- <command>`, with `--format table|json|cbom`."""
+`quantumtrace trace -- <command>`, with `--format table|json|cbom`, and `quantumtrace report
+<paths>` for an offline report folder."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from enum import StrEnum
+from itertools import count
 from pathlib import Path
 from typing import Annotated
 
@@ -15,8 +18,9 @@ from rich.console import Console
 from rich.table import Table
 
 from quantumtrace.cbom.cyclonedx import to_cyclonedx
-from quantumtrace.core.engine import run_probe, run_scan
+from quantumtrace.core.engine import iter_files, run_probe, run_scan
 from quantumtrace.core.models import Evidence, RiskTier, ScanResult
+from quantumtrace.report import headline, render_summary
 from quantumtrace.scanners.network.probe import ProbeError
 from quantumtrace.tracers import TRACE_FILE, python_environment
 
@@ -53,6 +57,59 @@ def scan(
 ) -> None:
     """Scan files/directories and report quantum-vulnerable cryptography."""
     _report(run_scan(paths), fmt, output, fail_on)
+
+
+REPORT_FILES = ("summary.pdf", "report.json", "cbom.cdx.json")
+
+
+@app.command()
+def report(
+    paths: Annotated[list[Path], typer.Argument(exists=True, help="Files or directories")],
+    out: Annotated[
+        Path, typer.Option("--out", "-o", help="Folder that keeps one subfolder per run")
+    ] = Path("outputs"),
+    fail_on: Annotated[
+        RiskTier | None, typer.Option(help="Exit 1 if any finding has this tier (for CI)")
+    ] = None,
+) -> None:
+    """Scan offline and write summary.pdf, report.json and cbom.cdx.json to a new folder in
+    `outputs/`, named after the time and what was scanned."""
+    # Earlier runs inside a scanned folder are reports, not inputs.
+    runs = out.resolve()
+    files = [f for f in iter_files(paths) if not f.resolve().is_relative_to(runs)]
+    result = run_scan(files, display_targets=[str(p) for p in paths])
+
+    folder = _run_folder(out, result, paths)
+    summary, report_json, cbom = (folder / name for name in REPORT_FILES)
+    report_json.write_text(json.dumps(result.model_dump(mode="json"), indent=2), encoding="utf-8")
+    cbom.write_text(json.dumps(to_cyclonedx(result), indent=2), encoding="utf-8")
+    summary.write_bytes(render_summary(result, report_name=report_json.name, cbom_name=cbom.name))
+
+    s = result.score
+    console.print(f"{headline(result)} Quantum risk score {s.value:.1f} of 10 (grade {s.grade}).")
+    for err in result.errors:
+        console.print(f"[red]error[/] {err}")
+    console.print(f"Wrote {', '.join(REPORT_FILES)} to [bold]{folder}[/]", style="green")
+    if fail_on and any(f.classification.tier == fail_on for f in result.findings):
+        raise typer.Exit(code=1)
+
+
+def _run_folder(out: Path, result: ScanResult, paths: list[Path]) -> Path:
+    """A new folder per run: `2026-10-11_143052_samples`, local time then the first target,
+    with `-2`, `-3` added when two runs land in the same second."""
+    when = result.created_at.astimezone().strftime("%Y-%m-%d_%H%M%S")
+    name = re.sub(r"[^a-z0-9._-]+", "-", paths[0].resolve().name.lower()).strip("-.")[:40]
+    name = name or "scan"
+    if len(paths) > 1:
+        name += f"-and-{len(paths) - 1}-more"
+    for n in count(1):
+        folder = out / (f"{when}_{name}" if n == 1 else f"{when}_{name}-{n}")
+        try:
+            folder.mkdir(parents=True)
+        except FileExistsError:
+            continue
+        return folder
+    raise AssertionError("unreachable")
 
 
 @app.command()
@@ -132,7 +189,7 @@ def _report(
         console.print(table)
         s = result.score
         console.print(
-            f"Quantum Risk Score: [bold]{s.value}[/] (grade {s.grade}). "
+            f"Quantum Risk Score: [bold]{s.value:.1f}[/] of 10 (grade {s.grade}). "
             f"critical={s.counts.critical} medium={s.counts.medium} "
             f"safe={s.counts.safe} unknown={s.counts.unknown}"
         )

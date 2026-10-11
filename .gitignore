@@ -30,6 +30,7 @@ dist/
 # Local scan outputs
 *.cdx.json
 reports/
+outputs/
 
 # Browser extension (WXT)
 .output/

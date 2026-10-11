@@ -47,7 +47,7 @@ function scan(findings: Finding[], limitations: string[] = []): ScanResult {
     targets: ["samples/"],
     scanners: ["code"],
     findings,
-    score: { value: 40.1, grade: "C", counts: { critical: count("critical"), medium: count("medium"), safe: count("safe"), unknown: count("unknown") } },
+    score: { value: 4.0, grade: "C", counts: { critical: count("critical"), medium: count("medium"), safe: count("safe"), unknown: count("unknown") } },
     score_by_source: {},
     limitations: limitations.map((message) => ({ scanner: "code", message })),
     errors: [],

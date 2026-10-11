@@ -37,6 +37,7 @@ samples/  ──►  scanners/*  ──CryptoAsset──►  core/classifier  �
 | `backend/src/quantumtrace/tracers/` | `python/`: the stand-alone tracer (`sitecustomize.py` + `quantumtrace_tracer.py`, stdlib only, `sys.monitoring`) that a traced run puts on `PYTHONPATH`. It records, never classifies |
 | `backend/src/quantumtrace/core/libraries.py` | crypto library catalogue; ties findings to the library their code imports or their build bundles (jar `pom.properties`, Go build info), which the CBOM lists as `library` components that `provide` algorithms. Dependency manifests are not read: they never prove an algorithm |
 | `backend/src/quantumtrace/cbom/` | CycloneDX 1.6 export |
+| `backend/src/quantumtrace/report/` | PDF summary for `quantumtrace report` (offline run folders in `outputs/`): a standard-library PDF writer, same content as the web's `lib/pdf.ts` |
 | `backend/src/quantumtrace/api/` | FastAPI app, `/api/v1/*`, optional `X-API-Key`; scans in memory or Upstash Redis (`store/`); `github.py` fetches public repos for `/scans/github` (refs from git's `info/refs`, zip from codeload, no GitHub API rate limit) |
 | `backend/tests/` | golden tests against `samples/` and `personal-samples/` for every vector |
 | `frontend/apps/web/` | React 19 + Vite + Tailwind v4 dashboard (deployed to Vercel) |
@@ -56,6 +57,7 @@ make test        # pytest + vitest
 make lint        # ruff, ruff format --check, mypy --strict, eslint, tsc
 make gen-sdk     # after ANY API/model change: regenerate openapi.json + SDK types
 make scan        # CLI scan of all samples
+make report      # offline run folder outputs/<time>_<target>/: summary.pdf, report.json, cbom.cdx.json
 make demo        # docker compose: api :8000, web :8080
 cd backend && uv run quantumtrace scan ../samples/cloud-posture -f cbom -o out.cdx.json
 ```
@@ -120,7 +122,7 @@ cd backend && uv run quantumtrace scan ../samples/cloud-posture -f cbom -o out.c
 - **Palette:** colour is reserved for risk. Crimson = Shor, ochre = Grover, teal = resilient.
   Everything else is ink on porcelain (tokens in `packages/ui/src/tokens.css`, with dark mode).
   One deliberate exception: "Fix code with AI" wears Gemini's blue → purple → rose gradient
-  (`--qt-ai`, `.btn-ai`, `.ai-chip` in the web app's `index.css`) so the feature stands out and
+  (`--qt-ai`, `.btn-ai` in the web app's `index.css`) so the feature stands out and
   never reads as a risk tier. Keep it to that feature.
 - **Type:** Public Sans for everything. JetBrains Mono **only** for real identifiers (ARNs, OIDs,
   cipher suites, paths), never for labels.
